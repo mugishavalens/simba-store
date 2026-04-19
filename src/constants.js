@@ -5,6 +5,8 @@ export const STORAGE_KEYS = {
   auth: "simba.auth.v2",
   users: "simba.users.v2",
   currentUser: "simba.current-user.v2",
+  orders: "simba.orders.v2",
+  messages: "simba.messages.v2",
 };
 
 export const LANGUAGES = ["en", "fr", "rw"];

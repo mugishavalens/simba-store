@@ -4,6 +4,8 @@ import { t } from "./i18n.js";
 import {
   addToCart,
   clearAuthFeedback,
+  clearCheckoutFeedback,
+  clearContactFeedback,
   completeOrder,
   getState,
   initializeStore,
@@ -11,7 +13,9 @@ import {
   loginWithGoogle,
   registerAccount,
   resetPassword,
+  sendSupportMessage,
   setFilter,
+  setAuthFeedback,
   setLanguage,
   setSearch,
   setTheme,
@@ -27,20 +31,10 @@ const app = document.querySelector("#app");
 window.addEventListener("hashchange", render);
 subscribe(() => render());
 
-// Header Scroll Logic
 let lastScrollY = window.scrollY;
 window.addEventListener("scroll", () => {
-  const topbar = document.querySelector(".topbar");
-  if (!topbar) return;
-
   const currentScrollY = window.scrollY;
-  // Hide header if we scroll down more than 100px and it's not the top of the page
-  if (currentScrollY > 100 && currentScrollY > lastScrollY) {
-    topbar.style.transform = "translateY(-100%)";
-    topbar.style.transition = "transform 0.3s ease-in-out";
-  } else {
-    topbar.style.transform = "translateY(0)";
-  }
+  syncHeaderPanelVisibility(currentScrollY > 160 && currentScrollY > lastScrollY);
   lastScrollY = currentScrollY;
 });
 
@@ -53,6 +47,7 @@ async function boot() {
 
 function render() {
   const state = getState();
+  document.documentElement.lang = state.language;
   if (!state.store) {
     app.innerHTML =
       '<main class="shell section"><div class="banner"><h3>Loading Simba 2.0</h3><p>Preparing the catalog...</p></div></main>';
@@ -83,6 +78,13 @@ function render() {
   `;
 
   bindEvents(currentRoute);
+  syncHeaderPanelVisibility(window.scrollY > 160 && window.scrollY > lastScrollY);
+}
+
+function syncHeaderPanelVisibility(hidden) {
+  const panel = document.querySelector(".discover-panel");
+  if (!panel) return;
+  panel.classList.toggle("discover-panel--hidden", hidden);
 }
 
 function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
@@ -123,56 +125,58 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
               : `<a class="button button--primary" href="#/auth/signin">${tr("navSignIn")}</a>`
           }
         </div>
-        ${
-          authMode
-            ? ""
-            : `<label class="searchbar">
+      </div>
+      ${
+        authMode
+          ? ""
+          : `<div class="discover-panel">
+              <label class="searchbar">
                 <span class="searchbar__icon">&#8981;</span>
                 <input id="search-input" value="${escapeHtml(state.search)}" placeholder="${tr("searchPlaceholder")}" />
-              </label>`
-        }
-      </div>
-      ${authMode ? "" : `<div class="toolbar">
-        <div class="toolbar__panel">
-          <div class="filters">
-            <select class="select" id="category-filter">
-              <option value="all">${tr("allCategories")}</option>
-              ${categories
-                .map(
-                  (category) =>
-                    `<option value="${escapeHtml(category)}" ${state.filters.category === category ? "selected" : ""}>${escapeHtml(category)}</option>`,
-                )
-                .join("")}
-            </select>
-            <select class="select" id="price-filter">
-              <option value="all">${tr("allPrices")}</option>
-              <option value="low" ${state.filters.price === "low" ? "selected" : ""}>${tr("budgetLow")}</option>
-              <option value="mid" ${state.filters.price === "mid" ? "selected" : ""}>${tr("budgetMid")}</option>
-              <option value="high" ${state.filters.price === "high" ? "selected" : ""}>${tr("budgetHigh")}</option>
-            </select>
-            <select class="select" id="stock-filter">
-              <option value="all">${tr("allStock")}</option>
-              <option value="in" ${state.filters.stock === "in" ? "selected" : ""}>${tr("inStock")}</option>
-              <option value="out" ${state.filters.stock === "out" ? "selected" : ""}>${tr("outOfStock")}</option>
-            </select>
-          </div>
-          <div class="toolbar__group">
-            <select class="select" id="sort-filter">
-              <option value="featured" ${state.filters.sort === "featured" ? "selected" : ""}>${tr("sortFeatured")}</option>
-              <option value="low" ${state.filters.sort === "low" ? "selected" : ""}>${tr("sortLow")}</option>
-              <option value="high" ${state.filters.sort === "high" ? "selected" : ""}>${tr("sortHigh")}</option>
-            </select>
-          </div>
-        </div>
-        <div class="aisle-strip">
-          ${featuredCategories
-            .map(
-              (category) =>
-                `<button class="aisle-chip category-trigger ${state.filters.category === category ? "aisle-chip--active" : ""}" data-category="${escapeHtml(category)}">${escapeHtml(category)}</button>`,
-            )
-            .join("")}
-        </div>
-      </div>`}
+              </label>
+              <div class="toolbar">
+                <div class="toolbar__panel">
+                  <div class="filters">
+                    <select class="select" id="category-filter">
+                      <option value="all">${tr("allCategories")}</option>
+                      ${categories
+                        .map(
+                          (category) =>
+                            `<option value="${escapeHtml(category)}" ${state.filters.category === category ? "selected" : ""}>${escapeHtml(category)}</option>`,
+                        )
+                        .join("")}
+                    </select>
+                    <select class="select" id="price-filter">
+                      <option value="all">${tr("allPrices")}</option>
+                      <option value="low" ${state.filters.price === "low" ? "selected" : ""}>${tr("budgetLow")}</option>
+                      <option value="mid" ${state.filters.price === "mid" ? "selected" : ""}>${tr("budgetMid")}</option>
+                      <option value="high" ${state.filters.price === "high" ? "selected" : ""}>${tr("budgetHigh")}</option>
+                    </select>
+                    <select class="select" id="stock-filter">
+                      <option value="all">${tr("allStock")}</option>
+                      <option value="in" ${state.filters.stock === "in" ? "selected" : ""}>${tr("inStock")}</option>
+                      <option value="out" ${state.filters.stock === "out" ? "selected" : ""}>${tr("outOfStock")}</option>
+                    </select>
+                  </div>
+                  <div class="toolbar__group">
+                    <select class="select" id="sort-filter">
+                      <option value="featured" ${state.filters.sort === "featured" ? "selected" : ""}>${tr("sortFeatured")}</option>
+                      <option value="low" ${state.filters.sort === "low" ? "selected" : ""}>${tr("sortLow")}</option>
+                      <option value="high" ${state.filters.sort === "high" ? "selected" : ""}>${tr("sortHigh")}</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="aisle-strip">
+                  ${featuredCategories
+                    .map(
+                      (category) =>
+                        `<button class="aisle-chip category-trigger ${state.filters.category === category ? "aisle-chip--active" : ""}" data-category="${escapeHtml(category)}">${escapeHtml(category)}</button>`,
+                    )
+                    .join("")}
+                </div>
+              </div>
+            </div>`
+      }
     </header>
   `;
 }
@@ -196,9 +200,9 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
               </div>
             </div>
             <div class="stats">
-              <div class="stat"><div class="stat__value">789</div><div>${tr("statProducts")}</div></div>
+              <div class="stat"><div class="stat__value">${state.products.length}</div><div>${tr("statProducts")}</div></div>
               <div class="stat"><div class="stat__value">${categories.length}</div><div>${tr("statCategories")}</div></div>
-              <div class="stat"><div class="stat__value">3</div><div>${tr("statLanguage")}</div></div>
+              <div class="stat"><div class="stat__value">${LANGUAGES.length}</div><div>${tr("statLanguage")}</div></div>
               <div class="stat"><div class="stat__value">${cartSummary.count}</div><div>${tr("cartCount")}</div></div>
             </div>
             <div class="hero__badges">

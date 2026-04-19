@@ -1,6 +1,17 @@
+import {
+  createOrder,
+  hydrateSession,
+  loginUser,
+  loginWithGoogleUser,
+  registerUser,
+  resetUserPassword,
+  submitSupportMessage,
+} from "./backend.js";
 import { DEFAULT_FILTERS, STORAGE_KEYS } from "./constants.js";
 
 const listeners = new Set();
+
+const session = hydrateSession();
 
 const state = {
   products: [],
@@ -10,12 +21,16 @@ const state = {
   search: "",
   theme: readStorage(STORAGE_KEYS.theme, "light"),
   language: readStorage(STORAGE_KEYS.language, "en"),
-  users: readStorage(STORAGE_KEYS.users, []),
-  currentUser: readStorage(STORAGE_KEYS.currentUser, null),
-  isAuthenticated: readStorage(STORAGE_KEYS.auth, false),
+  users: session.users,
+  currentUser: session.currentUser,
+  isAuthenticated: session.isAuthenticated,
+  orders: session.orders,
   cartOpen: false,
   orderComplete: false,
   authFeedback: null,
+  contactFeedback: null,
+  checkoutFeedback: null,
+  lastOrder: session.orders[0] ?? null,
 };
 
 function readStorage(key, fallback) {
@@ -79,6 +94,21 @@ export function clearAuthFeedback() {
   emit();
 }
 
+export function setAuthFeedback(code, type = "error") {
+  state.authFeedback = { type, code };
+  emit();
+}
+
+export function clearContactFeedback() {
+  state.contactFeedback = null;
+  emit();
+}
+
+export function clearCheckoutFeedback() {
+  state.checkoutFeedback = null;
+  emit();
+}
+
 export function signOut() {
   state.isAuthenticated = false;
   state.cartOpen = false;
@@ -89,92 +119,59 @@ export function signOut() {
   emit();
 }
 
-export function registerAccount(payload) {
-  const email = payload.email.trim().toLowerCase();
-  if (state.users.some((user) => user.email === email)) {
-    state.authFeedback = { type: "error", code: "exists" };
+export async function registerAccount(payload) {
+  const result = await registerUser(payload);
+  state.authFeedback = { type: result.ok ? "success" : "error", code: result.code };
+  if (!result.ok) {
     emit();
     return false;
   }
 
-  const user = {
-    id: Date.now(),
-    fullName: payload.fullName.trim(),
-    email,
-    role: payload.role || "customer",
-    password: payload.password,
-  };
-
-  state.users.push(user);
-  state.currentUser = { id: user.id, fullName: user.fullName, email: user.email, role: user.role };
+  state.users = result.users;
+  state.currentUser = result.user;
   state.isAuthenticated = true;
-  state.authFeedback = { type: "success", code: "created" };
-  persist(STORAGE_KEYS.users, state.users);
-  persist(STORAGE_KEYS.currentUser, state.currentUser);
-  persist(STORAGE_KEYS.auth, true);
   emit();
   return true;
 }
 
-export function loginAccount(payload) {
-  const email = payload.email.trim().toLowerCase();
-  const user = state.users.find((entry) => entry.email === email && entry.password === payload.password);
-
-  if (!user) {
-    state.authFeedback = { type: "error", code: "invalid" };
+export async function loginAccount(payload) {
+  const result = await loginUser(payload);
+  state.authFeedback = { type: result.ok ? "success" : "error", code: result.code };
+  if (!result.ok) {
     emit();
     return false;
   }
 
-  state.currentUser = { id: user.id, fullName: user.fullName, email: user.email, role: user.role };
+  state.users = result.users;
+  state.currentUser = result.user;
   state.isAuthenticated = true;
-  state.authFeedback = { type: "success", code: "welcome" };
-  persist(STORAGE_KEYS.currentUser, state.currentUser);
-  persist(STORAGE_KEYS.auth, true);
   emit();
   return true;
 }
 
-export function loginWithGoogle() {
-  const googleEmail = "google.user@simba.rw";
-  let user = state.users.find((entry) => entry.email === googleEmail);
-
-  if (!user) {
-    user = {
-      id: Date.now(),
-      fullName: "Google Shopper",
-      email: googleEmail,
-      role: "customer",
-      password: "google-oauth",
-    };
-    state.users.push(user);
-    persist(STORAGE_KEYS.users, state.users);
-  }
-
-  state.currentUser = { id: user.id, fullName: user.fullName, email: user.email, role: user.role };
+export async function loginWithGoogle() {
+  const result = await loginWithGoogleUser();
+  state.users = result.users;
+  state.currentUser = result.user;
   state.isAuthenticated = true;
-  state.authFeedback = { type: "success", code: "welcome" };
-  persist(STORAGE_KEYS.currentUser, state.currentUser);
-  persist(STORAGE_KEYS.auth, true);
+  state.authFeedback = { type: "success", code: result.code };
   emit();
   return true;
 }
 
-export function resetPassword(payload) {
-  const email = payload.email.trim().toLowerCase();
-  const user = state.users.find((entry) => entry.email === email);
-
-  if (!user) {
-    state.authFeedback = { type: "error", code: "missing" };
-    emit();
-    return false;
-  }
-
-  user.password = payload.password;
-  state.authFeedback = { type: "success", code: "reset" };
-  persist(STORAGE_KEYS.users, state.users);
+export async function resetPassword(payload) {
+  const result = await resetUserPassword(payload);
+  state.authFeedback = { type: result.ok ? "success" : "error", code: result.code };
+  if (result.ok) state.users = result.users;
   emit();
-  return true;
+  return result.ok;
+}
+
+export async function sendSupportMessage(payload) {
+  const result = await submitSupportMessage(payload);
+  state.contactFeedback = { type: result.ok ? "success" : "error", code: result.code };
+  emit();
+  return result.ok;
 }
 
 export function toggleCart(open = !state.cartOpen) {
@@ -208,13 +205,30 @@ export function updateQuantity(productId, delta) {
 export function clearCart() {
   state.cart = [];
   state.orderComplete = false;
+  state.checkoutFeedback = null;
   persist(STORAGE_KEYS.cart, state.cart);
   emit();
 }
 
-export function completeOrder() {
+export async function completeOrder(payload) {
+  if (!state.cart.length) {
+    state.checkoutFeedback = { type: "error", code: "emptyCart" };
+    emit();
+    return false;
+  }
+
+  const result = await createOrder(payload);
+  state.checkoutFeedback = { type: result.ok ? "success" : "error", code: result.code };
+  if (!result.ok) {
+    emit();
+    return false;
+  }
+
+  state.orders = result.orders;
+  state.lastOrder = result.order;
   state.orderComplete = true;
   state.cart = [];
   persist(STORAGE_KEYS.cart, state.cart);
   emit();
+  return true;
 }
