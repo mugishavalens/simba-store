@@ -1,0 +1,19 @@
+<svg width="980" height="220" viewBox="0 0 980 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="980" height="220" rx="28" fill="#F57C00"/>
+  <circle cx="110" cy="110" r="82" fill="#FFF9F2"/>
+  <circle cx="110" cy="110" r="80" stroke="#F57C00" stroke-width="4"/>
+  <path d="M84 70C88 58 98 49 111 44L108 57L119 50L121 63L133 49L136 63L144 54L146 69C162 76 173 90 173 110C173 137 151 159 124 159C97 159 75 137 75 110C75 92 84 78 99 72" stroke="#F26A21" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M103 93C107 86 114 82 124 82C134 82 141 86 145 93" stroke="#F26A21" stroke-width="5.5" stroke-linecap="round"/>
+  <path d="M109 111C113 106 118 103 124 103C130 103 135 106 139 111" stroke="#F26A21" stroke-width="5.5" stroke-linecap="round"/>
+  <circle cx="112" cy="95" r="3.8" fill="#F26A21"/>
+  <circle cx="136" cy="95" r="3.8" fill="#F26A21"/>
+  <path d="M124 98V112" stroke="#F26A21" stroke-width="5.5" stroke-linecap="round"/>
+  <path d="M116 119C119 123 121 124 124 124C127 124 129 123 132 119" stroke="#F26A21" stroke-width="5.5" stroke-linecap="round"/>
+  <path d="M96 134C104 142 114 147 124 147C134 147 144 142 152 134" stroke="#F26A21" stroke-width="4.8" stroke-linecap="round"/>
+  <path d="M89 87L77 83" stroke="#F26A21" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M159 87L171 83" stroke="#F26A21" stroke-width="4.5" stroke-linecap="round"/>
+  <text x="111" y="36" text-anchor="middle" fill="#F26A21" font-size="26" font-family="Georgia, serif" font-weight="700" transform="rotate(-8 111 36)">simba</text>
+  <text x="111" y="188" text-anchor="middle" fill="#F26A21" font-size="23" font-family="Georgia, serif" font-weight="700" transform="rotate(8 111 188)">supermarket</text>
+  <text x="200" y="104" fill="white" font-size="52" font-family="Georgia, serif" font-weight="700">Simba Supermarket</text>
+  <text x="200" y="154" fill="white" font-size="42" font-family="Georgia, serif" font-weight="500">Online Shopping</text>
+</svg>
