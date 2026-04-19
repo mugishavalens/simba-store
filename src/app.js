@@ -98,9 +98,9 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
         </a>
         <nav class="main-nav" aria-label="Primary">
           <a class="main-nav__link" href="#/">${tr("navHome")}</a>
-          <a class="main-nav__link" href="#catalog">${tr("navAbout")}</a>
-          <a class="main-nav__link" href="#catalog">${tr("navContact")}</a>
-          <a class="main-nav__link" href="#/checkout">${tr("navSupport")}</a>
+          <a class="main-nav__link" href="#about">${tr("navAbout")}</a>
+          <a class="main-nav__link" href="#contact">${tr("navContact")}</a>
+          <a class="main-nav__link" href="#contact">${tr("navSupport")}</a>
         </nav>
         <div class="topbar__actions">
           <div class="language-switcher">
@@ -184,6 +184,9 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
 function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
   const topCategories = categories.slice(0, 6);
   const featured = filteredProducts.slice(0, 18);
+  const contactFeedback = state.contactFeedback
+    ? `<p class="auth-feedback auth-feedback--${state.contactFeedback.type}">${tr(`contact_${state.contactFeedback.code}`)}</p>`
+    : "";
 
   return `
     <main>
@@ -200,9 +203,9 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
               </div>
             </div>
             <div class="stats">
-              <div class="stat"><div class="stat__value">${state.products.length}</div><div>${tr("statProducts")}</div></div>
+              <div class="stat"><div class="stat__value">789</div><div>${tr("statProducts")}</div></div>
               <div class="stat"><div class="stat__value">${categories.length}</div><div>${tr("statCategories")}</div></div>
-              <div class="stat"><div class="stat__value">${LANGUAGES.length}</div><div>${tr("statLanguage")}</div></div>
+              <div class="stat"><div class="stat__value">3</div><div>${tr("statLanguage")}</div></div>
               <div class="stat"><div class="stat__value">${cartSummary.count}</div><div>${tr("cartCount")}</div></div>
             </div>
             <div class="hero__badges">
@@ -214,7 +217,7 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
         </div>
       </section>
 
-      <section class="section">
+      <section class="section" id="about">
         <div class="section__header">
           <div>
             <h2 class="section__title">${tr("whyTitle")}</h2>
@@ -277,6 +280,43 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
             ? `<div class="product-grid">${featured.map((product) => renderProductCard(product, tr)).join("")}</div>`
             : `<div class="empty-state"><h3>${tr("noResultsTitle")}</h3><p>${tr("noResultsText")}</p></div>`
         }
+      </section>
+
+      <section class="section" id="contact">
+        <div class="section__header">
+          <div>
+            <h2 class="section__title">${tr("navContact")}</h2>
+            <p class="section__lead">${tr("contactLead")}</p>
+          </div>
+        </div>
+        <div class="contact-grid">
+          <article class="feature-card contact-card">
+            <h3>Email</h3>
+            <p>hello@simba.rw</p>
+          </article>
+          <article class="feature-card contact-card">
+            <h3>Phone</h3>
+            <p>+250 788 123 456</p>
+          </article>
+          <article class="feature-card contact-card">
+            <h3>Kigali</h3>
+            <p>KG 7 Ave, Kigali, Rwanda</p>
+          </article>
+        </div>
+        <div class="auth-card contact-panel">
+          ${contactFeedback}
+          <form id="contact-form" class="auth-form">
+            <div class="checkout-grid">
+              <label class="checkout-field"><span>${tr("fullName")}</span><input name="fullName" required /></label>
+              <label class="checkout-field"><span>${tr("authEmail")}</span><input name="email" type="email" required /></label>
+            </div>
+            <label class="checkout-field"><span>${tr("contactMessage")}</span><textarea name="message" rows="4" required></textarea></label>
+            <div class="contact-panel__actions">
+              <button class="button button--accent" type="submit">${tr("contactSend")}</button>
+              <span class="muted">${tr("contactLead")}</span>
+            </div>
+          </form>
+        </div>
       </section>
 
       ${renderFooter(tr)}
@@ -435,6 +475,9 @@ function renderCheckoutView(state, cartSummary, tr) {
 function renderAuthView(state, mode, tr) {
   const activeMode = ["signin", "signup", "forgot"].includes(mode) ? mode : "signin";
   const feedback = state.authFeedback ? `<p class="auth-feedback auth-feedback--${state.authFeedback.type}">${tr(`auth_${state.authFeedback.code}`)}</p>` : "";
+  const contactFeedback = state.contactFeedback
+    ? `<p class="auth-feedback auth-feedback--${state.contactFeedback.type}">${tr(`contact_${state.contactFeedback.code}`)}</p>`
+    : "";
 
   return `
     <main class="auth-layout">
@@ -488,27 +531,16 @@ function renderAuthView(state, mode, tr) {
               `
         }
         <button class="auth-google" id="google-login">${tr("authGoogle")}</button>
-        <div style="margin-top: 2rem; padding-top: 2rem; border-top: 1px dashed var(--line);">
-          <h2 style="font-size: 1.25rem; margin-bottom: 0.5rem;">${tr("navContact")}</h2>
-          <p class="muted" style="margin-bottom: 1rem; font-size: 0.9rem;">Need help with your account? Send us a message.</p>
-          <form id="contact-form" class="auth-form" style="display: grid; gap: 1rem;">
-            <div style="display: grid; gap: 0.5rem;">
-              <span style="font-size: 0.85rem; font-weight: 600;">${tr("fullName")}</span>
-              <input name="fullName" style="width: 100%; border-radius: var(--radius-sm); border: 1px solid var(--line); padding: 0.6rem; background: var(--surface-strong); color: var(--text);" required />
-            </div>
-            <div style="display: grid; gap: 0.5rem;">
-              <span style="font-size: 0.85rem; font-weight: 600;">${tr("authEmail")}</span>
-              <input name="email" type="email" style="width: 100%; border-radius: var(--radius-sm); border: 1px solid var(--line); padding: 0.6rem; background: var(--surface-strong); color: var(--text);" required />
-            </div>
-            <div style="display: grid; gap: 0.5rem;">
-              <span style="font-size: 0.85rem; font-weight: 600;">Message</span>
-              <textarea name="message" rows="3" style="width: 100%; border-radius: var(--radius-sm); border: 1px solid var(--line); padding: 0.6rem; background: var(--surface-strong); color: var(--text); resize: none;" required></textarea>
-            </div>
-            <button class="button button--accent" type="submit" style="width: 100%;">Send Message</button>
+        <div class="auth-support">
+          <h2>${tr("navContact")}</h2>
+          <p class="muted">${tr("contactLead")}</p>
+          ${contactFeedback}
+          <form id="contact-form" class="auth-form">
+            <label class="checkout-field"><span>${tr("fullName")}</span><input name="fullName" required /></label>
+            <label class="checkout-field"><span>${tr("authEmail")}</span><input name="email" type="email" required /></label>
+            <label class="checkout-field"><span>${tr("contactMessage")}</span><textarea name="message" rows="3" required></textarea></label>
+            <button class="button button--accent" type="submit">${tr("contactSend")}</button>
           </form>
-          <div id="contact-feedback" style="display:none; padding: 0.75rem; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--accent); margin-top: 1rem; text-align: center; font-size: 0.9rem; font-weight: 600;">
-            Message sent! We will contact you soon.
-          </div>
         </div>
       </section>
     </main>
@@ -622,46 +654,71 @@ function bindEvents(currentRoute) {
     location.hash = "/checkout";
   });
 
-  document.querySelector("#checkout-form")?.addEventListener("submit", (event) => {
+  document.querySelector("#checkout-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    completeOrder();
-    location.hash = "/checkout";
+    const form = new FormData(event.currentTarget);
+    const state = getState();
+    const cartSummary = summarizeCart(state.products, state.cart);
+    const ok = await completeOrder({
+      fullName: form.get("fullName"),
+      phone: form.get("phone"),
+      district: form.get("district"),
+      paymentMethod: form.get("paymentMethod"),
+      momoNumber: form.get("momoNumber"),
+      address: form.get("address"),
+      notes: form.get("notes"),
+      items: cartSummary.items.map((item) => ({
+        productId: item.product.id,
+        name: item.product.name,
+        quantity: item.quantity,
+        lineTotal: item.lineTotal,
+      })),
+      totals: {
+        subtotal: cartSummary.subtotal,
+        delivery: cartSummary.delivery,
+        total: cartSummary.total,
+      },
+    });
+    if (ok) location.hash = "/checkout";
   });
 
   document.querySelectorAll('.auth-tab').forEach((link) =>
     link.addEventListener("click", () => clearAuthFeedback()),
   );
 
-  document.querySelector("#signin-form")?.addEventListener("submit", (event) => {
+  document.querySelector("#signin-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const ok = loginAccount({
+    const ok = await loginAccount({
       email: form.get("email"),
       password: form.get("password"),
     });
     if (ok) location.hash = "/";
   });
 
-  document.querySelector("#contact-form")?.addEventListener("submit", (event) => {
+  document.querySelector("#contact-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const feedback = document.querySelector("#contact-feedback");
-    if (feedback) {
-      feedback.style.display = "block";
+    const form = new FormData(event.currentTarget);
+    const ok = await sendSupportMessage({
+      fullName: form.get("fullName"),
+      email: form.get("email"),
+      message: form.get("message"),
+    });
+    if (ok) {
       event.currentTarget.reset();
-      setTimeout(() => { feedback.style.display = "none"; }, 5000);
     }
   });
 
-  document.querySelector("#signup-form")?.addEventListener("submit", (event) => {
+  document.querySelector("#signup-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const password = String(form.get("password"));
     const confirmPassword = String(form.get("confirmPassword"));
     if (password !== confirmPassword) {
-      alert("Passwords do not match.");
+      setAuthFeedback("passwordMismatch");
       return;
     }
-    const ok = registerAccount({
+    const ok = await registerAccount({
       fullName: form.get("fullName"),
       email: form.get("email"),
       role: form.get("role"),
@@ -670,28 +727,29 @@ function bindEvents(currentRoute) {
     if (ok) location.hash = "/";
   });
 
-  document.querySelector("#reset-form")?.addEventListener("submit", (event) => {
+  document.querySelector("#reset-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const password = String(form.get("password"));
     const confirmPassword = String(form.get("confirmPassword"));
     if (password !== confirmPassword) {
-      alert("Passwords do not match.");
+      setAuthFeedback("passwordMismatch");
       return;
     }
-    const ok = resetPassword({
+    const ok = await resetPassword({
       email: form.get("email"),
       password,
     });
     if (ok) location.hash = "/auth/signin";
   });
 
-  document.querySelector("#google-login")?.addEventListener("click", () => {
-    const ok = loginWithGoogle();
+  document.querySelector("#google-login")?.addEventListener("click", async () => {
+    const ok = await loginWithGoogle();
     if (ok) location.hash = "/";
   });
 
   if (currentRoute.name === "checkout") {
+    clearContactFeedback();
     const paymentMethod = document.querySelector("#payment-method");
     const momoField = document.querySelector("#momo-field");
     const syncMomoField = () => {
@@ -702,6 +760,12 @@ function bindEvents(currentRoute) {
 
     paymentMethod?.addEventListener("change", syncMomoField);
     syncMomoField();
+  }
+
+  if (currentRoute.name !== "checkout") clearCheckoutFeedback();
+  if (!["auth", "home"].includes(currentRoute.name)) {
+    clearAuthFeedback();
+    clearContactFeedback();
   }
 }
 

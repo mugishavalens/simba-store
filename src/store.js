@@ -90,6 +90,7 @@ export function setLanguage(language) {
 }
 
 export function clearAuthFeedback() {
+  if (!state.authFeedback) return;
   state.authFeedback = null;
   emit();
 }
@@ -100,11 +101,13 @@ export function setAuthFeedback(code, type = "error") {
 }
 
 export function clearContactFeedback() {
+  if (!state.contactFeedback) return;
   state.contactFeedback = null;
   emit();
 }
 
 export function clearCheckoutFeedback() {
+  if (!state.checkoutFeedback) return;
   state.checkoutFeedback = null;
   emit();
 }
