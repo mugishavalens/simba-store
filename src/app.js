@@ -34,7 +34,7 @@ subscribe(() => render());
 let lastScrollY = window.scrollY;
 window.addEventListener("scroll", () => {
   const currentScrollY = window.scrollY;
-  syncHeaderPanelVisibility(currentScrollY > 160 && currentScrollY > lastScrollY);
+  syncHeaderPanelVisibility(currentScrollY > 8 && currentScrollY > lastScrollY);
   lastScrollY = currentScrollY;
 });
 
@@ -78,7 +78,7 @@ function render() {
   `;
 
   bindEvents(currentRoute);
-  syncHeaderPanelVisibility(window.scrollY > 160 && window.scrollY > lastScrollY);
+  syncHeaderPanelVisibility(window.scrollY > 8 && window.scrollY > lastScrollY);
 }
 
 function syncHeaderPanelVisibility(hidden) {
@@ -88,7 +88,6 @@ function syncHeaderPanelVisibility(hidden) {
 }
 
 function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
-  const featuredCategories = categories.slice(0, 5);
   const authMode = currentRoute.name === "auth";
   return `
     <header class="topbar">
@@ -165,14 +164,6 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
                       <option value="high" ${state.filters.sort === "high" ? "selected" : ""}>${tr("sortHigh")}</option>
                     </select>
                   </div>
-                </div>
-                <div class="aisle-strip">
-                  ${featuredCategories
-                    .map(
-                      (category) =>
-                        `<button class="aisle-chip category-trigger ${state.filters.category === category ? "aisle-chip--active" : ""}" data-category="${escapeHtml(category)}">${escapeHtml(category)}</button>`,
-                    )
-                    .join("")}
                 </div>
               </div>
             </div>`
