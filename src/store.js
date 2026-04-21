@@ -205,6 +205,14 @@ export function updateQuantity(productId, delta) {
   emit();
 }
 
+export function removeFromCart(productId) {
+  const nextCart = state.cart.filter((item) => item.productId !== productId);
+  if (nextCart.length === state.cart.length) return;
+  state.cart = nextCart;
+  persist(STORAGE_KEYS.cart, state.cart);
+  emit();
+}
+
 export function clearCart() {
   state.cart = [];
   state.orderComplete = false;
