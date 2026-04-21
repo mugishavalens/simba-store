@@ -112,6 +112,14 @@ function render() {
 
   bindEvents(currentRoute);
   syncDiscoverPanelVisibility();
+
+  if (location.hash && !location.hash.includes("/")) {
+    const targetId = location.hash.substring(1);
+    const targetEl = document.getElementById(targetId);
+    if (targetEl) {
+      targetEl.scrollIntoView({ behavior: "smooth" });
+    }
+  }
 }
 
 function syncDiscoverPanelVisibility() {
@@ -135,7 +143,7 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
           </div>
         </a>
         <nav class="main-nav" aria-label="Primary">
-          <a class="main-nav__link" href="#/">${tr("navHome")}</a>
+          <a class="main-nav__link" href="#home">${tr("navHome")}</a>
           <a class="main-nav__link" href="#about">${tr("navAbout")}</a>
           <a class="main-nav__link" href="#vision">${tr("navVision")}</a>
           <a class="main-nav__link" href="#support">${tr("navSupport")}</a>
@@ -143,7 +151,6 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
         <div class="topbar__actions">
           <div class="language-switcher">
             <label class="control-pill control-pill--select" for="language-select">
-              <span class="control-pill__label">${tr("language")}</span>
               <select class="select select--compact select--bare" id="language-select" aria-label="${tr("language")}">
                 ${LANGUAGES.map(
                   (language) =>
@@ -232,7 +239,7 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
 
   return `
     <main>
-      <section class="hero">
+      <section class="hero" id="home">
         <div class="hero__content">
           <div class="hero__grid">
             <div>
