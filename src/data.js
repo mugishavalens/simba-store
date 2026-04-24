@@ -1,10 +1,21 @@
+import { catalogData } from "./catalog-data.js";
+
 export async function loadCatalog() {
-  const response = await fetch("./simba_products.json");
-  if (!response.ok) {
-    throw new Error("Failed to load Simba dataset");
+  let payload = null;
+
+  try {
+    const response = await fetch("./simba_products.json");
+    if (response.ok) {
+      payload = await response.json();
+    }
+  } catch {
+    // Fall back to the bundled catalog when running from file:// or other restricted contexts.
   }
 
-  const payload = await response.json();
+  if (!payload) {
+    payload = catalogData;
+  }
+
   const products = payload.products.map((product) => ({
     ...product,
     slug: slugify(product.name),

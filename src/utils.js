@@ -70,5 +70,8 @@ export function route() {
   if (path === "product" && id) return { name: "product", id: Number(id) };
   if (path === "checkout") return { name: "checkout" };
   if (path === "auth") return { name: "auth", mode: id || "signin" };
+  if (path === "account") return { name: "account" };
+  if (path === "admin") return { name: "admin" };
+  if (path === "clients") return { name: "clients" };
   return { name: "home" };
 }

@@ -1,8 +1,9 @@
-import { CATEGORY_BACKGROUNDS, LANGUAGES, PAYMENT_METHODS } from "./constants.js";
+import { CATEGORY_BACKGROUNDS, GOOGLE_CLIENT_ID, LANGUAGES, PAYMENT_METHODS, SIMBA_BRANCHES, STORAGE_KEYS } from "./constants.js";
 import { loadCatalog } from "./data.js";
 import { t } from "./i18n.js";
 import {
   addToCart,
+  clearAdminFeedback,
   clearAuthFeedback,
   clearCart,
   clearCheckoutFeedback,
@@ -15,6 +16,8 @@ import {
   registerAccount,
   removeFromCart,
   resetPassword,
+  saveProduct,
+  sendSupportReply,
   sendSupportMessage,
   setFilter,
   setAuthFeedback,
@@ -24,6 +27,7 @@ import {
   signOut,
   subscribe,
   toggleCart,
+  updateAccountProfile,
   updateQuantity,
 } from "./store.js";
 import { applyFilters, formatPrice, getCategories, route, summarizeCart } from "./utils.js";
@@ -38,47 +42,37 @@ const VISION_SHOWCASE_IMAGES = [
 ];
 
 const app = document.querySelector("#app");
-let lastScrollY = window.scrollY;
+let hasBoundGlobalEvents = false;
+let pendingAdminPanel = "";
+let pendingAdminTargetId = "";
+let pendingAccountTargetId = "";
+let customerNotificationsOpen = false;
+let topbarNotificationsOpen = false;
+let adminCustomersNotificationsOpen = false;
+let adminProductsNotificationsOpen = false;
+let searchInputState = null;
+let pendingCatalogScroll = false;
+let customerLocationState = null; // { lat, lng } when user shares location
+let nearestBranchState = null;    // branch object
+let locationStatusState = "";     // ""|"locating"|"denied"|"error"
+let branchMapInitialized = false;
 let discoverPanelHidden = false;
-let scrollTicking = false;
+let adminOpenCustomerEmail = ""; // tracks which customer chat is open in admin
 
 window.addEventListener("hashchange", render);
 subscribe(() => render());
-window.addEventListener(
-  "scroll",
-  () => {
-    if (scrollTicking) return;
-    scrollTicking = true;
-
-    requestAnimationFrame(() => {
-      const currentScrollY = window.scrollY;
-      const delta = currentScrollY - lastScrollY;
-      const shouldHide = currentScrollY > 140 && delta > 10;
-      const shouldShow = delta < -6 || currentScrollY < 72;
-
-      if (shouldHide && !discoverPanelHidden) {
-        discoverPanelHidden = true;
-        syncDiscoverPanelVisibility();
-      } else if (shouldShow && discoverPanelHidden) {
-        discoverPanelHidden = false;
-        syncDiscoverPanelVisibility();
-      }
-
-      lastScrollY = currentScrollY;
-      scrollTicking = false;
-    });
-  },
-  { passive: true },
-);
 
 boot();
 
 async function boot() {
   const payload = await loadCatalog();
   initializeStore(payload);
+  await handleGoogleAuthCallback();
 }
 
 function render() {
+  captureSearchInputState();
+  branchMapInitialized = false;
   const state = getState();
   document.documentElement.lang = state.language;
   if (!state.store) {
@@ -100,6 +94,12 @@ function render() {
     view = renderCheckoutView(state, cartSummary, tr);
   } else if (currentRoute.name === "auth") {
     view = renderAuthView(state, currentRoute.mode, tr);
+  } else if (currentRoute.name === "clients") {
+    view = renderAdminView(state, filteredProducts, tr);
+  } else if (currentRoute.name === "account") {
+    view = renderAccountView(state, cartSummary, tr);
+  } else if (currentRoute.name === "admin") {
+    view = renderAdminView(state, filteredProducts, tr);
   } else {
     view = renderHomeView(state, categories, filteredProducts, cartSummary, tr);
   }
@@ -107,11 +107,23 @@ function render() {
   app.innerHTML = `
     ${renderTopbar(state, cartSummary, categories, tr, currentRoute)}
     ${view}
+    ${state.cartOpen ? `<div class="cart-overlay" id="cart-overlay"></div>` : ""}
     ${state.cartOpen ? renderCart(state, cartSummary, tr) : ""}
   `;
 
   bindEvents(currentRoute);
-  syncDiscoverPanelVisibility();
+  restoreSearchInputState();
+  if (discoverPanelHidden) {
+    document.querySelector(".discover-panel")?.classList.add("discover-panel--scrolled");
+  }
+  requestAnimationFrame(() => initBranchesMap());
+
+  if (pendingCatalogScroll) {
+    requestAnimationFrame(() => {
+      document.getElementById("catalog")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      pendingCatalogScroll = false;
+    });
+  }
 
   if (location.hash && !location.hash.includes("/")) {
     const targetId = location.hash.substring(1);
@@ -122,19 +134,18 @@ function render() {
   }
 }
 
-function syncDiscoverPanelVisibility() {
-  const panel = document.querySelector(".discover-panel");
-  if (!panel) return;
-  panel.classList.toggle("discover-panel--hidden", discoverPanelHidden);
-}
-
 function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
   const authMode = currentRoute.name === "auth";
   const isDark = state.theme === "dark";
+  const isAdmin = state.isAuthenticated && state.currentUser?.role === "admin";
+  const isCustomer = state.isAuthenticated && state.currentUser?.role === "customer";
+  const topbarNotifications = isCustomer ? getCustomerNotifications(state, tr) : [];
+  const topbarNotificationCount = isCustomer ? getUnreadCustomerNotificationCount(state) : 0;
+  const activeLanguage = state.language.toUpperCase();
   return `
     <header class="topbar">
       <div class="topbar__inner">
-        <a class="brand brand--lockup" href="#/">
+        <a class="brand brand--lockup" href="#/" data-home-link="true">
           <img src="${BRAND_LOGO}" alt="Simba Supermarket Online Shopping" />
           <div class="brand__text">
             <strong>Simba</strong>
@@ -143,85 +154,129 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
           </div>
         </a>
         <nav class="main-nav" aria-label="Primary">
-          <a class="main-nav__link" href="#home">${tr("navHome")}</a>
-          <a class="main-nav__link" href="#about">${tr("navAbout")}</a>
-          <a class="main-nav__link" href="#vision">${tr("navVision")}</a>
-          <a class="main-nav__link" href="#support">${tr("navSupport")}</a>
+          <a class="main-nav__link" href="#/" data-home-link="true">${tr("navHome")}</a>
+          ${
+            isAdmin
+              ? `
+                <a class="main-nav__link" href="#/admin" data-admin-nav-target="customers-panel">${tr("adminManageCustomers")}</a>
+                <a class="main-nav__link" href="#/admin" data-admin-nav-target="products-panel">${tr("navProducts")}</a>
+              `
+              : `
+                <a class="main-nav__link" href="#branches">${tr("navBranches")}</a>
+                <a class="main-nav__link" href="#support">${tr("navSupport")}</a>
+                <a class="main-nav__link" href="#about">${tr("navAbout")}</a>
+                <a class="main-nav__link" href="#vision">${tr("navVision")}</a>
+              `
+          }
         </nav>
         <div class="topbar__actions">
-          <div class="language-switcher">
-            <label class="control-pill control-pill--select" for="language-select">
-              <select class="select select--compact select--bare" id="language-select" aria-label="${tr("language")}">
+          <div class="topbar__utility">
+            ${!isAdmin ? `
+            <button class="cart-icon-btn" id="cart-toggle" type="button" aria-label="${tr("cart")}">
+              &#128722;
+              ${cartSummary.count > 0 ? `<span class="notification-count">${cartSummary.count}</span>` : ""}
+            </button>
+            ` : ""}
+            <div class="language-menu">
+              <button
+                class="control-pill control-pill--tiny language-menu__trigger"
+                id="language-toggle"
+                type="button"
+                aria-haspopup="true"
+                aria-expanded="false"
+                aria-label="${tr("language")}"
+              >
+                <span>${activeLanguage}</span>
+                <span class="language-menu__caret" aria-hidden="true">&#9662;</span>
+              </button>
+              <div class="language-menu__list" id="language-list" hidden>
                 ${LANGUAGES.map(
-                  (language) =>
-                    `<option value="${language}" ${state.language === language ? "selected" : ""}>${language.toUpperCase()}</option>`,
+                  (language) => `
+                    <button
+                      class="language-menu__item ${state.language === language ? "language-menu__item--active" : ""}"
+                      type="button"
+                      data-language="${language}"
+                    >
+                      ${language.toUpperCase()}
+                    </button>
+                  `,
                 ).join("")}
-              </select>
-            </label>
+              </div>
+            </div>
             <button
-              class="control-pill control-pill--toggle"
+              class="control-pill control-pill--tiny control-pill--toggle"
               id="theme-toggle"
               type="button"
               aria-label="${tr("darkMode")}"
               aria-pressed="${isDark}"
               title="${isDark ? tr("themeDark") : tr("themeLight")}"
             >
-              <span class="control-pill__label">${tr("darkMode")}</span>
               <span class="theme-toggle ${isDark ? "theme-toggle--dark" : ""}" aria-hidden="true">
                 <span class="theme-toggle__thumb"></span>
               </span>
             </button>
+            ${
+              isCustomer
+                ? `
+                  <button class="control-pill control-pill--tiny control-pill--toggle topbar-notification-btn" id="topbar-notifications-toggle" type="button" aria-label="${tr("customerNotifications")}">
+                    <span aria-hidden="true">&#128276;</span>
+                    ${topbarNotificationCount > 0 ? `<span class="notification-count">${topbarNotificationCount}</span>` : ""}
+                  </button>
+                  ${
+                    topbarNotificationsOpen
+                      ? `
+                        <div class="topbar-notification-list">
+                          ${renderCustomerNotificationSections(topbarNotifications.slice(0, 8), tr)}
+                          <a class="button button--ghost" href="#/account">${tr("customerOpenSettings")}</a>
+                        </div>
+                      `
+                      : ""
+                  }
+                `
+                : ""
+            }
           </div>
-          ${
-            state.isAuthenticated
-              ? `
-                <span class="role-pill">${escapeHtml(state.currentUser?.role || "customer")}</span>
-                <button class="button button--ghost" id="cart-toggle">${tr("cart")} (${cartSummary.count})</button>
-                <button class="button button--primary" id="signout-toggle">${tr("navSignOut")}</button>
-              `
-              : `<a class="button button--primary" href="#/auth/signin">${tr("navSignIn")}</a>`
-          }
+          <div class="topbar__session">
+            ${
+              state.isAuthenticated
+                ? state.currentUser?.role === "customer"
+                  ? `<a class="button button--primary" href="#/account">&#9881; ${tr("customerSettings")}</a>`
+                  : `<button class="button button--primary" id="signout-toggle">${tr("navSignOut")}</button>`
+                : `<a class="button button--primary" href="#/auth/signin">${tr("navSignIn")}</a>`
+            }
+          </div>
         </div>
       </div>
       ${
         authMode
           ? ""
           : `<div class="discover-panel">
-              <label class="searchbar">
-                <span class="searchbar__icon">&#8981;</span>
-                <input id="search-input" value="${escapeHtml(state.search)}" placeholder="${tr("searchPlaceholder")}" />
-              </label>
-              <div class="toolbar">
-                <div class="toolbar__panel">
-                  <div class="filters">
-                    <select class="select" id="category-filter">
-                      <option value="all">${tr("allCategories")}</option>
-                      ${categories
-                        .map(
-                          (category) =>
-                            `<option value="${escapeHtml(category)}" ${state.filters.category === category ? "selected" : ""}>${escapeHtml(category)}</option>`,
-                        )
-                        .join("")}
-                    </select>
-                    <select class="select" id="price-filter">
-                      <option value="all">${tr("allPrices")}</option>
-                      <option value="low" ${state.filters.price === "low" ? "selected" : ""}>${tr("budgetLow")}</option>
-                      <option value="mid" ${state.filters.price === "mid" ? "selected" : ""}>${tr("budgetMid")}</option>
-                      <option value="high" ${state.filters.price === "high" ? "selected" : ""}>${tr("budgetHigh")}</option>
-                    </select>
-                    <select class="select" id="stock-filter">
-                      <option value="all">${tr("allStock")}</option>
-                      <option value="in" ${state.filters.stock === "in" ? "selected" : ""}>${tr("inStock")}</option>
-                      <option value="out" ${state.filters.stock === "out" ? "selected" : ""}>${tr("outOfStock")}</option>
-                    </select>
-                  </div>
-                  <div class="toolbar__group">
-                    <select class="select" id="sort-filter">
-                      <option value="featured" ${state.filters.sort === "featured" ? "selected" : ""}>${tr("sortFeatured")}</option>
-                      <option value="low" ${state.filters.sort === "low" ? "selected" : ""}>${tr("sortLow")}</option>
-                      <option value="high" ${state.filters.sort === "high" ? "selected" : ""}>${tr("sortHigh")}</option>
-                    </select>
-                  </div>
+              <div class="discover-row">
+                <label class="searchbar searchbar--inline">
+                  <span class="searchbar__icon">&#8981;</span>
+                  <input id="search-input" value="${escapeHtml(state.search)}" placeholder="${tr("searchPlaceholder")}" />
+                </label>
+                <div class="discover-filters">
+                  <select class="select select--compact" id="category-filter">
+                    <option value="all">${tr("allCategories")}</option>
+                    ${categories.map((category) => `<option value="${escapeHtml(category)}" ${state.filters.category === category ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}
+                  </select>
+                  <select class="select select--compact" id="price-filter">
+                    <option value="all">${tr("allPrices")}</option>
+                    <option value="low" ${state.filters.price === "low" ? "selected" : ""}>${tr("budgetLow")}</option>
+                    <option value="mid" ${state.filters.price === "mid" ? "selected" : ""}>${tr("budgetMid")}</option>
+                    <option value="high" ${state.filters.price === "high" ? "selected" : ""}>${tr("budgetHigh")}</option>
+                  </select>
+                  <select class="select select--compact" id="stock-filter">
+                    <option value="all">${tr("allStock")}</option>
+                    <option value="in" ${state.filters.stock === "in" ? "selected" : ""}>${tr("inStock")}</option>
+                    <option value="out" ${state.filters.stock === "out" ? "selected" : ""}>${tr("outOfStock")}</option>
+                  </select>
+                  <select class="select select--compact" id="sort-filter">
+                    <option value="featured" ${state.filters.sort === "featured" ? "selected" : ""}>${tr("sortFeatured")}</option>
+                    <option value="low" ${state.filters.sort === "low" ? "selected" : ""}>${tr("sortLow")}</option>
+                    <option value="high" ${state.filters.sort === "high" ? "selected" : ""}>${tr("sortHigh")}</option>
+                  </select>
                 </div>
               </div>
             </div>`
@@ -248,7 +303,7 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
               <p>${tr("heroText")}</p>
               <div class="hero__actions">
                 <a class="button button--primary" href="#catalog">${tr("shopNow")}</a>
-                <button class="button button--ghost" id="hero-cart">${tr("viewCart")}</button>
+                ${state.isAuthenticated ? `<button class="button button--ghost" id="hero-cart">${tr("viewCart")}</button>` : `<a class="button button--ghost" href="#/auth/signin">${tr("navSignIn")}</a>`}
               </div>
             </div>
             <div class="stats">
@@ -375,6 +430,44 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
         }
       </section>
 
+      <section class="section" id="branches">
+        <div class="section__header">
+          <div>
+            <h2 class="section__title">${tr("branchesTitle")}</h2>
+            <p class="section__lead">${tr("branchesLead")}</p>
+          </div>
+        </div>
+        <div class="branches-panel">
+          <div class="branches-top">
+            <div id="branches-map" class="branches-map"></div>
+            <div class="branches-controls">
+              <form id="branch-search-form" class="customer-chat-input-row">
+                <input id="branch-location-input" placeholder="${tr("branchesSearchPlaceholder")}" autocomplete="off" />
+                <button class="button button--accent" type="submit">&#128269;</button>
+              </form>
+              <button class="button button--ghost" id="locate-me-btn" type="button">
+                &#127759; ${locationStatusState === "locating" ? tr("branchesLocating") : tr("branchesShareLocation")}
+              </button>
+              ${locationStatusState === "denied" ? `<p class="auth-feedback auth-feedback--error">${tr("branchesLocationDenied")}</p>` : ""}
+              ${locationStatusState === "error" ? `<p class="auth-feedback auth-feedback--error">${tr("branchesLocationError")}</p>` : ""}
+              ${nearestBranchState ? `
+                <div class="banner">
+                  <h3>&#128205; ${tr("branchesNearest")}</h3>
+                  <p><strong>${escapeHtml(nearestBranchState.name)}</strong></p>
+                  <p class="muted">${escapeHtml(nearestBranchState.address)}</p>
+                </div>
+              ` : ""}
+            </div>
+          </div>
+          <div class="branches-grid">
+            ${SIMBA_BRANCHES.map((branch, idx) => {
+              const cls = nearestBranchState?.id === branch.id ? "branch-item branch-item--nearest" : "branch-item";
+              return `<button class="${cls} branch-focus-btn" type="button" data-branch-idx="${idx}"><strong>${escapeHtml(branch.name)}</strong><span class="muted">${escapeHtml(branch.address)}</span></button>`;
+            }).join("")}
+          </div>
+        </div>
+      </section>
+
       <section class="section" id="support">
         <div class="section__header">
           <div>
@@ -418,6 +511,7 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
 }
 
 function renderProductCard(product, tr) {
+  const state = getState();
   return `
     <article class="product-card">
       <div class="product-card__media">
@@ -425,17 +519,17 @@ function renderProductCard(product, tr) {
       </div>
       <div class="product-card__body">
         <div class="tag-row">
-          <span class="pill">${escapeHtml(product.category)}</span>
-          <span class="pill">${product.inStock ? tr("inStock") : tr("outOfStock")}</span>
+          <span class="pill pill--small">${escapeHtml(product.category)}</span>
+          <span class="pill pill--small ${product.inStock ? 'pill--success' : 'pill--warning'}">${product.inStock ? tr("inStock") : tr("outOfStock")}</span>
         </div>
-        <div class="product-card__name">${escapeHtml(product.name)}</div>
+        <h3 class="product-card__name">${escapeHtml(product.name)}</h3>
         <div class="product-card__meta">
-          <span class="muted">${tr("unit")}: ${escapeHtml(product.unit)}</span>
+          <span class="product-meta">${tr("unit")}: ${escapeHtml(product.unit)}</span>
           <strong class="product-card__price">${formatPrice(product.price)}</strong>
         </div>
         <div class="product-card__actions">
-          <a class="button button--ghost" href="#/product/${product.id}">${tr("details")}</a>
-          <button class="button button--primary add-to-cart" data-product-id="${product.id}">${tr("addToCart")}</button>
+          <a class="button button--ghost button--sm" href="#/product/${product.id}">${tr("details")}</a>
+          ${state.isAuthenticated ? `<button class="button button--primary button--sm add-to-cart" data-product-id="${product.id}">${tr("addToCart")}</button>` : `<a class="button button--primary button--sm" href="#/auth/signin">${tr("navSignIn")}</a>`}
         </div>
       </div>
     </article>
@@ -473,8 +567,8 @@ function renderProductView(state, productId, cartSummary, tr) {
             <span class="muted">${cartSummary.count} ${tr("cartCount")}</span>
           </div>
           <div class="detail-actions">
-            <button class="button button--primary add-to-cart" data-product-id="${product.id}">${tr("addToCart")}</button>
-            <button class="button button--accent" id="buy-now" data-product-id="${product.id}">${tr("goCheckout")}</button>
+            ${state.isAuthenticated ? `<button class="button button--primary add-to-cart" data-product-id="${product.id}">${tr("addToCart")}</button>` : `<a class="button button--primary" href="#/auth/signin">${tr("navSignIn")}</a>`}
+            ${state.isAuthenticated ? `<button class="button button--accent" id="buy-now" data-product-id="${product.id}">${tr("goCheckout")}</button>` : ""}
           </div>
           <div class="banner">
             <h3>${tr("momoHint")}</h3>
@@ -537,6 +631,13 @@ function renderCheckoutView(state, cartSummary, tr) {
                   <span>${tr("notes")}</span>
                   <textarea name="notes"></textarea>
                 </label>
+                <div class="checkout-location-row">
+                  <button class="button button--ghost" id="checkout-locate-btn" type="button">
+                    &#127759; ${customerLocationState ? `&#10003; ${nearestBranchState ? escapeHtml(nearestBranchState.name) : tr("branchesNearest")}` : tr("branchesShareLocation")}
+                  </button>
+                  ${locationStatusState === "locating" ? `<span class="muted">${tr("branchesLocating")}</span>` : ""}
+                  ${locationStatusState === "denied" ? `<p class="auth-feedback auth-feedback--error" style="margin:0">${tr("branchesLocationDenied")}</p>` : ""}
+                </div>
                 <div class="checkout-actions">
                   <button class="button button--primary" type="submit">${tr("placeOrder")}</button>
                   <a class="button button--ghost" href="#/">${tr("continueShopping")}</a>
@@ -565,6 +666,481 @@ function renderCheckoutView(state, cartSummary, tr) {
   `;
 }
 
+function renderAccountView(state, cartSummary, tr) {
+  if (!state.isAuthenticated) {
+    return `
+      <main class="auth-layout">
+        <section class="auth-panel">
+          <div class="banner">
+            <h3>${tr("authSignInTitle")}</h3>
+            <p>${tr("accountSigninRequired")}</p>
+            <a class="button button--primary" href="#/auth/signin">${tr("navSignIn")}</a>
+          </div>
+        </section>
+      </main>
+    `;
+  }
+
+  const latestOrder = state.lastOrder;
+  const currentUserEmail = String(state.currentUser?.email || "").toLowerCase();
+  const currentUserName = String(state.currentUser?.fullName || "").trim().toLowerCase();
+  const customerOrders = state.orders
+    .filter((order) => {
+      const orderEmail = String(order.customer?.email || "").toLowerCase();
+      const orderName = String(order.customer?.fullName || "").trim().toLowerCase();
+      if (!currentUserEmail) return false;
+      return orderEmail === currentUserEmail || (!orderEmail && orderName === currentUserName);
+    })
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const customerNotifications = getCustomerNotifications(state, tr);
+  const notificationCount = getUnreadCustomerNotificationCount(state);
+  const customerMessages = (state.messages || [])
+    .filter((message) => String(message.email || "").toLowerCase() === currentUserEmail)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const accountFeedbackSource = state.adminFeedback || state.authFeedback;
+  const adminFeedback = accountFeedbackSource
+    ? `<p class="auth-feedback auth-feedback--${accountFeedbackSource.type}">${tr(`${state.adminFeedback ? "admin" : "auth"}_${accountFeedbackSource.code}`)}</p>`
+    : "";
+
+  return `
+    <main class="auth-layout auth-layout--wide">
+      <section class="auth-panel">
+        <div class="auth-panel__intro">
+          <div class="eyebrow">${tr("accountDashboard")}</div>
+          <h1>${escapeHtml(state.currentUser?.fullName || tr("accountDashboard"))}</h1>
+          <p class="section__lead">${tr("customerDashboardLead")}</p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card">
+            <h3>${tr("authEmail")}</h3>
+            <p>${escapeHtml(state.currentUser?.email || "-")}</p>
+          </article>
+          <article class="feature-card">
+            <h3>${tr("authRole")}</h3>
+            <p>${escapeHtml(state.currentUser?.role || "customer")}</p>
+          </article>
+          <article class="feature-card">
+            <h3>${tr("cart")}</h3>
+            <p>${cartSummary.count} ${tr("cartCount")}</p>
+            <button class="button button--primary" id="account-open-cart" type="button" style="margin-top:0.5rem">&#128722; ${tr("viewCart")}</button>
+          </article>
+          ${
+            state.currentUser?.role === "customer"
+              ? `
+                <article class="feature-card">
+                  <div class="account-notification-row">
+                    <h3>${tr("customerNotifications")}</h3>
+                    <button class="icon-button account-notification-bell" id="customer-notifications-toggle" type="button" aria-label="${tr("customerNotifications")}">
+                      <span aria-hidden="true">&#128276;</span>
+                      ${notificationCount > 0 ? `<span class="notification-count">${notificationCount}</span>` : ""}
+                    </button>
+                  </div>
+                  <p>${notificationCount > 0 ? `${notificationCount} ${tr("customerNotificationsPending")}` : tr("customerNotificationsEmpty")}</p>
+                  ${
+                    customerNotificationsOpen
+                      ? `
+                        <div class="account-notification-list">
+                          ${renderCustomerNotificationSections(customerNotifications, tr)}
+                        </div>
+                      `
+                      : ""
+                  }
+                </article>
+              `
+              : ""
+          }
+        </div>
+        ${
+          state.currentUser?.role === "admin"
+            ? `
+              ${adminFeedback}
+              <form id="admin-profile-form" class="auth-form admin-form">
+                <label class="checkout-field"><span>${tr("fullName")}</span><input name="fullName" value="${escapeHtml(state.currentUser?.fullName || "")}" required /></label>
+                <label class="checkout-field"><span>${tr("authEmail")}</span><input value="${escapeHtml(state.currentUser?.email || "")}" disabled /></label>
+                <label class="checkout-field"><span>${tr("authNewPassword")}</span><input name="password" type="password" minlength="6" /></label>
+                <label class="checkout-field"><span>${tr("authConfirmPassword")}</span><input name="confirmPassword" type="password" minlength="6" /></label>
+                <button class="button button--primary" type="submit">${tr("saveAdminProfile")}</button>
+              </form>
+            `
+            : ""
+        }
+        ${
+          state.currentUser?.role === "customer"
+            ? `
+              ${adminFeedback}
+              <section class="summary-card">
+                <h3>${tr("customerSettings")}</h3>
+                <form id="customer-profile-form" class="auth-form admin-form">
+                  <label class="checkout-field"><span>${tr("fullName")}</span><input name="fullName" value="${escapeHtml(state.currentUser?.fullName || "")}" required /></label>
+                  <label class="checkout-field"><span>${tr("authEmail")}</span><input value="${escapeHtml(state.currentUser?.email || "")}" disabled /></label>
+                  <label class="checkout-field"><span>${tr("authNewPassword")}</span><input name="password" type="password" minlength="6" /></label>
+                  <label class="checkout-field"><span>${tr("authConfirmPassword")}</span><input name="confirmPassword" type="password" minlength="6" /></label>
+                  <div class="detail-actions">
+                    <button class="button button--primary" type="submit">${tr("customerUpdateProfile")}</button>
+                    <button class="button button--ghost" id="account-signout" type="button">${tr("navSignOut")}</button>
+                  </div>
+                </form>
+              </section>
+            `
+            : ""
+        }
+        ${
+          state.currentUser?.role === "customer"
+            ? `
+              <section class="summary-card">
+                <h3>${tr("customerOrderHistory")}</h3>
+                <div class="admin-activity-list">
+                  ${
+                    customerOrders.length
+                      ? customerOrders
+                          .map(
+                            (order) => `
+                              <div class="summary-card history-card">
+                                <div class="summary-card__row">
+                                  <span>
+                                    ${escapeHtml(order.reference)}
+                                    <br />
+                                    <span class="muted">${new Date(order.createdAt).toLocaleString()} • ${escapeHtml(order.paymentStatus || "pending")}</span>
+                                  </span>
+                                  <strong>${formatPrice(order.totals?.total || 0)}</strong>
+                                </div>
+                                <div class="order-history-items">
+                                  ${(order.items || [])
+                                    .map((item) => {
+                                      const qty = Number(item.quantity || 1);
+                                      const lineTotal = Number(item.lineTotal || 0);
+                                      const unitPrice = qty > 0 ? lineTotal / qty : lineTotal;
+                                      return `
+                                        <div class="summary-card__row">
+                                          <span>${escapeHtml(item.name)} x${qty}</span>
+                                          <strong>${formatPrice(unitPrice)} (${tr("priceLabel")})</strong>
+                                        </div>
+                                      `;
+                                    })
+                                    .join("")}
+                                </div>
+                              </div>
+                            `,
+                          )
+                          .join("")
+                      : `<p>${tr("noOrdersYet")}</p>`
+                  }
+                </div>
+              </section>
+              <section class="summary-card" id="customer-chatbox">
+                <h3>${tr("customerChatboxTitle")}</h3>
+                <p class="muted">${tr("customerChatboxLead")}</p>
+                <div class="admin-activity-list">
+                  ${
+                    customerMessages.length
+                      ? customerMessages
+                          .map(
+                            (message) => `
+                              <div class="admin-message-card">
+                                <div class="admin-message-card__head">
+                                  <strong>${tr("customerYouLabel")}</strong>
+                                  <span class="muted">${new Date(message.createdAt).toLocaleString()}</span>
+                                </div>
+                                <p>${escapeHtml(message.message)}</p>
+                                <div class="admin-replies">
+                                  ${(Array.isArray(message.replies) ? message.replies : [])
+                                    .map(
+                                      (reply) => `
+                                        <div class="admin-reply-item">
+                                          <strong>${escapeHtml(reply.by)}</strong>
+                                          <span class="muted">${new Date(reply.createdAt).toLocaleString()}</span>
+                                          <p>${escapeHtml(reply.text)}</p>
+                                        </div>
+                                      `,
+                                    )
+                                    .join("")}
+                                </div>
+                              </div>
+                            `,
+                          )
+                          .join("")
+                      : `<p>${tr("adminNoMessages")}</p>`
+                  }
+                </div>
+                <form id="customer-chat-form" class="auth-form" style="margin-top:0.75rem">
+                  <div class="customer-chat-input-row">
+                    <input name="message" class="checkout-field__input" placeholder="${tr("customerChatPlaceholder")}" required autocomplete="off" />
+                    <button class="button button--accent" type="submit">${tr("customerChatSend")}</button>
+                  </div>
+                </form>
+              </section>
+            `
+            : latestOrder
+            ? `
+              <div class="banner">
+                <h3>${tr("latestOrder")}</h3>
+                <p>${escapeHtml(latestOrder.reference)} • ${formatPrice(latestOrder.totals.total)}</p>
+              </div>
+            `
+            : `<div class="banner"><h3>${tr("latestOrder")}</h3><p>${tr("noOrdersYet")}</p></div>`
+        }
+      </section>
+    </main>
+  `;
+}
+
+function renderAdminView(state, filteredProducts, tr) {
+  if (!state.isAuthenticated || state.currentUser?.role !== "admin") {
+    return `
+      <main class="auth-layout">
+        <section class="auth-panel">
+          <div class="banner">
+            <h3>${tr("adminDashboard")}</h3>
+            <p>${tr("adminSigninRequired")}</p>
+            <a class="button button--primary" href="#/auth/signin">${tr("adminLogin")}</a>
+          </div>
+        </section>
+      </main>
+    `;
+  }
+
+  const feedback = state.adminFeedback
+    ? `<p class="auth-feedback auth-feedback--${state.adminFeedback.type}">${tr(`admin_${state.adminFeedback.code}`)}</p>`
+    : "";
+  const visibleProducts = filteredProducts.slice(0, 24);
+  const customers = state.users.filter((user) => user.role === "customer");
+  const recentOrders = state.orders.slice(0, 8);
+  const recentMessages = (state.messages || []).slice(0, 12);
+  const adminNotifications = getAdminNotifications(state, tr);
+  const customerNotificationCount = adminNotifications.customerMessages.length;
+  const productNotificationCount = adminNotifications.productUpdates.length;
+
+  return `
+    <main class="section admin-layout">
+      <section class="section">
+        <div class="section__header">
+          <div>
+            <h2 class="section__title">${tr("adminDashboard")}</h2>
+            <p class="section__lead">${tr("adminDashboardLead")}</p>
+          </div>
+          <span class="pill">${visibleProducts.length} ${tr("filterResults")}</span>
+        </div>
+        ${feedback}
+        <div class="admin-subnav">
+          <button class="button button--ghost admin-notification-toggle" type="button" data-admin-notification-type="customers" data-admin-nav-target="customers-panel">
+            ${tr("adminManageCustomers")}
+            ${customerNotificationCount > 0 ? `<span class="notification-count">${customerNotificationCount}</span>` : ""}
+          </button>
+          <button class="button button--ghost admin-notification-toggle" type="button" data-admin-notification-type="products" data-admin-nav-target="products-panel">
+            ${tr("navProducts")}
+            ${productNotificationCount > 0 ? `<span class="notification-count">${productNotificationCount}</span>` : ""}
+          </button>
+          <a class="button button--ghost" href="#/admin" data-admin-nav-target="customers-panel">${tr("adminOpenCustomersPanel")}</a>
+          <a class="button button--ghost" href="#/admin" data-admin-nav-target="products-panel">${tr("adminOpenProductsPanel")}</a>
+        </div>
+        ${
+          adminCustomersNotificationsOpen
+            ? `
+              <div class="admin-notification-list">
+                ${
+                  adminNotifications.customerMessages.length
+                    ? adminNotifications.customerMessages
+                        .map(
+                          (entry) => `
+                            <button class="admin-notification-item" type="button" data-admin-notification-target="admin-message-${entry.id}" data-admin-nav-target="customers-panel">
+                              <strong>${escapeHtml(entry.title)}</strong>
+                              <span>${escapeHtml(entry.text)}</span>
+                            </button>
+                          `,
+                        )
+                        .join("")
+                    : `<p class="muted">${tr("adminNoNewCustomerMessages")}</p>`
+                }
+              </div>
+            `
+            : ""
+        }
+        ${
+          adminProductsNotificationsOpen
+            ? `
+              <div class="admin-notification-list">
+                ${
+                  adminNotifications.productUpdates.length
+                    ? adminNotifications.productUpdates
+                        .map(
+                          (entry) => `
+                            <button class="admin-notification-item" type="button" data-admin-notification-target="admin-product-${entry.id}" data-admin-nav-target="products-panel">
+                              <strong>${escapeHtml(entry.title)}</strong>
+                              <span>${escapeHtml(entry.text)}</span>
+                            </button>
+                          `,
+                        )
+                        .join("")
+                    : `<p class="muted">${tr("adminNoNewProductUpdates")}</p>`
+                }
+              </div>
+            `
+            : ""
+        }
+        <div class="feature-grid">
+          <article class="feature-card">
+            <h3>${tr("statProducts")}</h3>
+            <p>${state.products.length}</p>
+          </article>
+          <article class="feature-card">
+            <h3>${tr("cart")}</h3>
+            <p>${state.cart.length}</p>
+          </article>
+          <article class="feature-card">
+            <h3>${tr("authEmail")}</h3>
+            <p>${escapeHtml(state.currentUser.email)}</p>
+          </article>
+          <article class="feature-card">
+            <h3>${tr("adminCustomersCount")}</h3>
+            <p>${customers.length}</p>
+          </article>
+        </div>
+      </section>
+      <section class="admin-grid" id="products-panel">
+        <article class="summary-card">
+          <h3>${tr("addProduct")}</h3>
+          <form id="admin-product-form" class="auth-form admin-form">
+            <label class="checkout-field"><span>${tr("productName")}</span><input name="name" required /></label>
+            <label class="checkout-field"><span>${tr("category")}</span><input name="category" required /></label>
+            <label class="checkout-field"><span>${tr("unit")}</span><input name="unit" value="Pcs" required /></label>
+            <label class="checkout-field"><span>${tr("priceLabel")}</span><input name="price" type="number" min="0" step="1" required /></label>
+            <label class="checkout-field"><span>${tr("imageUrl")}</span><input name="image" type="url" placeholder="https://..." /></label>
+            <label class="auth-remember"><input name="inStock" type="checkbox" checked /> <span>${tr("inStock")}</span></label>
+            <button class="button button--primary" type="submit">${tr("saveProductButton")}</button>
+          </form>
+        </article>
+        <article class="summary-card">
+          <h3>${tr("editPrices")}</h3>
+          <div class="admin-product-list">
+            ${visibleProducts.map((product) => renderAdminProductEditor(product, tr)).join("")}
+          </div>
+        </article>
+      </section>
+      <section class="admin-grid" id="customers-panel">
+        <article class="summary-card">
+          <h3>${tr("adminManageCustomers")}</h3>
+          <div class="admin-activity-list">
+            ${
+              customers.length
+                ? customers.map((customer) => {
+                    const isOpen = adminOpenCustomerEmail === customer.email;
+                    const customerMsgs = (state.messages || []).filter(
+                      (m) => String(m.email || "").toLowerCase() === customer.email.toLowerCase()
+                    ).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+                    return `
+                      <div class="admin-customer-row">
+                        <button class="admin-customer-toggle" type="button" data-customer-email="${escapeHtml(customer.email)}">
+                          <span>
+                            <strong>${escapeHtml(customer.fullName || "-")}</strong>
+                            <span class="muted">${escapeHtml(customer.email)}</span>
+                          </span>
+                          <span class="pill">${customerMsgs.length}</span>
+                        </button>
+                        ${isOpen ? `
+                          <div class="admin-customer-chat">
+                            <div class="admin-customer-chat__messages">
+                              ${customerMsgs.length ? customerMsgs.map((msg) => `
+                                <div class="admin-message-card" id="admin-message-${msg.id}">
+                                  <div class="admin-message-card__head">
+                                    <strong>${escapeHtml(msg.fullName)}</strong>
+                                    <span class="muted">${new Date(msg.createdAt).toLocaleString()}</span>
+                                  </div>
+                                  <p>${escapeHtml(msg.message)}</p>
+                                  <div class="admin-replies">
+                                    ${(Array.isArray(msg.replies) ? msg.replies : []).map((reply) => `
+                                      <div class="admin-reply-item">
+                                        <strong>${escapeHtml(reply.by)}</strong>
+                                        <span class="muted">${new Date(reply.createdAt).toLocaleString()}</span>
+                                        <p>${escapeHtml(reply.text)}</p>
+                                      </div>
+                                    `).join("")}
+                                  </div>
+                                  <form class="admin-reply-form" data-message-id="${msg.id}">
+                                    <div class="customer-chat-input-row">
+                                      <input name="reply" placeholder="${tr("adminReplyPlaceholder")}" required autocomplete="off" />
+                                      <button class="button button--accent" type="submit">${tr("adminReplySend")}</button>
+                                    </div>
+                                  </form>
+                                </div>
+                              `).join("") : `<p class="muted">${tr("adminNoMessages")}</p>`}
+                            </div>
+                          </div>
+                        ` : ""}
+                      </div>
+                    `;
+                  }).join("")
+                : `<p>${tr("adminNoCustomers")}</p>`
+            }
+          </div>
+        </article>
+        <article class="summary-card">
+          <h3>${tr("adminOrdersMap")}</h3>
+          <div class="admin-activity-list">
+            ${
+              recentOrders.length
+                ? recentOrders
+                    .map(
+                      (order) => `
+                        <div class="admin-order-card">
+                          <div class="admin-order-header">
+                            <div>
+                              <strong>${escapeHtml(order.customer.fullName)}</strong>
+                              <div class="admin-order-meta">${escapeHtml(order.reference)} • ${escapeHtml(order.paymentStatus)}</div>
+                            </div>
+                            <strong class="admin-order-total">${formatPrice(order.totals.total)}</strong>
+                          </div>
+                          <div class="admin-order-details">
+                            ${order.customer.nearestBranch ? `<div class="admin-order-branch">📍 ${escapeHtml(order.customer.nearestBranch.name)}</div>` : ""}
+                            ${order.customer.location ? `<div class="admin-order-location">🌍 ${order.customer.location.lat.toFixed(4)}, ${order.customer.location.lng.toFixed(4)}</div>` : ""}
+                            <div class="admin-order-address">📮 ${escapeHtml(order.customer.address || 'No address provided')}</div>
+                            <div class="admin-order-phone">📞 ${escapeHtml(order.customer.phone || 'No phone provided')}</div>
+                          </div>
+                        </div>
+                      `,
+                    )
+                    .join("")
+                : `<div class="empty-orders-state">
+                    <p>${tr("noOrdersYet")}</p>
+                    <p class="muted">${tr("adminOrdersMapHint")}</p>
+                  </div>`
+            }
+          </div>
+          <div class="admin-orders-map-container">
+            <div id="admin-orders-map" class="branches-map admin-orders-map"></div>
+            ${recentOrders.length === 0 ? `<div class="map-overlay">${tr("adminOrdersMapEmpty")}</div>` : ""}
+          </div>
+        </article>
+      </section>
+    </main>
+  `;
+}
+
+function renderAdminProductEditor(product, tr) {
+  return `
+    <form class="admin-price-form" id="admin-product-${product.id}" data-product-id="${product.id}">
+      <div class="admin-product-list__head">
+        <div class="admin-product-info">
+          <strong class="admin-product-name">${escapeHtml(product.name)}</strong>
+          <div class="admin-product-meta">${escapeHtml(product.category)} • ${escapeHtml(product.unit)}</div>
+        </div>
+        <a class="button button--ghost button--sm" href="#/product/${product.id}">${tr("details")}</a>
+      </div>
+      <div class="admin-price-form__fields">
+        <label class="checkout-field checkout-field--compact">
+          <span>${tr("priceLabel")}</span>
+          <input name="price" type="number" min="0" step="1" value="${Number(product.price)}" required />
+        </label>
+        <label class="checkout-field checkout-field--compact">
+          <span>${tr("imageUrl")}</span>
+          <input name="image" type="url" value="${escapeHtml(product.image || '')}" placeholder="https://..." />
+        </label>
+        <label class="auth-remember"><input name="inStock" type="checkbox" ${product.inStock ? "checked" : ""} /> <span>${tr("inStock")}</span></label>
+        <button class="button button--primary button--sm" type="submit">${tr("updatePrice")}</button>
+      </div>
+    </form>
+  `;
+}
+
 function renderAuthView(state, mode, tr) {
   const feedback = state.authFeedback
     ? `<p class="auth-feedback auth-feedback--${state.authFeedback.type}">${tr(`auth_${state.authFeedback.code}`)}</p>`
@@ -585,13 +1161,6 @@ function renderAuthView(state, mode, tr) {
             <label class="checkout-field"><span>${tr("authEmail")}</span><input name="email" type="email" required /></label>
             <label class="checkout-field"><span>${tr("authPassword")}</span><input name="password" type="password" minlength="6" required /></label>
             <label class="checkout-field"><span>${tr("authConfirmPassword")}</span><input name="confirmPassword" type="password" minlength="6" required /></label>
-            <label class="checkout-field">
-              <span>${tr("authRole")}</span>
-              <select name="role">
-                <option value="customer">${tr("authRoleCustomer")}</option>
-                <option value="admin">${tr("authRoleAdmin")}</option>
-              </select>
-            </label>
             <button class="button button--primary auth-submit" type="submit">${tr("authCreateAccount")}</button>
           </form>
           <p class="auth-switch">${tr("authHaveAccount")} <a class="auth-inline-link" href="#/auth/signin">${tr("navSignIn")}</a></p>
@@ -632,7 +1201,7 @@ function renderAuthView(state, mode, tr) {
         </div>
         ${feedback}
         <form id="signin-form" class="auth-form">
-          <label class="checkout-field"><span>${tr("authEmail")}</span><input name="email" type="email" required /></label>
+          <label class="checkout-field"><span>${tr("authEmail")}</span><input name="email" type="email" autocomplete="email" required /></label>
           <label class="checkout-field"><span>${tr("authPassword")}</span><input name="password" type="password" minlength="6" required /></label>
           <div class="summary-card__row">
             <label class="auth-remember"><input type="checkbox" name="remember" /> <span>${tr("authRemember")}</span></label>
@@ -738,7 +1307,55 @@ function renderFooter(tr) {
 }
 
 function bindEvents(currentRoute) {
+  if (!hasBoundGlobalEvents) {
+    let lastScrollY = window.scrollY;
+    let ticking = false;
+    window.addEventListener("scroll", () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const currentY = window.scrollY;
+        const shouldHide = currentY > lastScrollY && currentY > 80;
+        if (shouldHide !== discoverPanelHidden) {
+          discoverPanelHidden = shouldHide;
+          const panel = document.querySelector(".discover-panel");
+          if (panel) panel.classList.toggle("discover-panel--scrolled", discoverPanelHidden);
+        }
+        lastScrollY = currentY;
+        ticking = false;
+      });
+    }, { passive: true });
+
+    document.addEventListener("click", (event) => {
+      const languageToggle = document.querySelector("#language-toggle");
+      const languageList = document.querySelector("#language-list");
+      if (!languageToggle || !languageList || languageList.hidden) return;
+      if (languageToggle.contains(event.target) || languageList.contains(event.target)) return;
+      languageList.hidden = true;
+      languageToggle.setAttribute("aria-expanded", "false");
+    });
+    document.addEventListener("click", (event) => {
+      const toggle = document.querySelector("#topbar-notifications-toggle");
+      const list = document.querySelector(".topbar-notification-list");
+      if (!toggle || !list || !topbarNotificationsOpen) return;
+      if (toggle.contains(event.target) || list.contains(event.target)) return;
+      topbarNotificationsOpen = false;
+      render();
+    }, true);
+    hasBoundGlobalEvents = true;
+  }
+
   document.querySelector("#search-input")?.addEventListener("input", (event) => setSearch(event.target.value));
+  document.querySelector("#search-input")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const nextValue = event.currentTarget.value;
+    pendingCatalogScroll = true;
+    setSearch(nextValue);
+    if (location.hash !== "#catalog") {
+      location.hash = "catalog";
+    }
+  });
   document.querySelector("#category-filter")?.addEventListener("change", (event) => setFilter("category", event.target.value));
   document.querySelector("#price-filter")?.addEventListener("change", (event) => setFilter("price", event.target.value));
   document.querySelector("#stock-filter")?.addEventListener("change", (event) => setFilter("stock", event.target.value));
@@ -747,15 +1364,112 @@ function bindEvents(currentRoute) {
     const nextTheme = getState().theme === "dark" ? "light" : "dark";
     setTheme(nextTheme);
   });
-  document.querySelector("#language-select")?.addEventListener("change", (event) => setLanguage(event.target.value));
+  const languageToggle = document.querySelector("#language-toggle");
+  const languageList = document.querySelector("#language-list");
+  languageToggle?.addEventListener("click", () => {
+    if (!languageList) return;
+    const isOpen = !languageList.hidden;
+    languageList.hidden = isOpen;
+    languageToggle.setAttribute("aria-expanded", String(!isOpen));
+  });
+  document.querySelectorAll(".language-menu__item").forEach((button) =>
+    button.addEventListener("click", () => {
+      setLanguage(button.dataset.language);
+      if (languageList) languageList.hidden = true;
+      languageToggle?.setAttribute("aria-expanded", "false");
+    }),
+  );
   document.querySelector("#cart-toggle")?.addEventListener("click", () => toggleCart(true));
-  document.querySelector("#signout-toggle")?.addEventListener("click", () => signOut());
+  document.querySelectorAll("[data-home-link='true']").forEach((link) =>
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      location.hash = "/";
+      setTimeout(() => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }, 0);
+    }),
+  );
+  document.querySelectorAll("[data-admin-nav-target]").forEach((link) =>
+    link.addEventListener("click", () => {
+      pendingAdminPanel = link.dataset.adminNavTarget || "";
+      pendingAdminTargetId = "";
+      if (route().name === "admin" && pendingAdminPanel) {
+        requestAnimationFrame(() => {
+          document.getElementById(pendingAdminPanel)?.scrollIntoView({ behavior: "smooth", block: "start" });
+          pendingAdminPanel = "";
+        });
+      }
+    }),
+  );
+  document.querySelectorAll("[data-admin-notification-target]").forEach((button) =>
+    button.addEventListener("click", () => {
+      pendingAdminPanel = button.dataset.adminNavTarget || "";
+      pendingAdminTargetId = button.dataset.adminNotificationTarget || "";
+      if (route().name === "admin") {
+        requestAnimationFrame(() => {
+          document.getElementById(pendingAdminPanel)?.scrollIntoView({ behavior: "smooth", block: "start" });
+          setTimeout(() => {
+            document.getElementById(pendingAdminTargetId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+            pendingAdminTargetId = "";
+          }, 120);
+          pendingAdminPanel = "";
+        });
+      } else {
+        location.hash = "/admin";
+      }
+    }),
+  );
+  document.querySelectorAll(".admin-notification-toggle").forEach((button) =>
+    button.addEventListener("click", () => {
+      const type = button.dataset.adminNotificationType;
+      if (type === "customers") {
+        adminCustomersNotificationsOpen = !adminCustomersNotificationsOpen;
+        if (adminCustomersNotificationsOpen) markAdminNotificationsSeen("customerMessages");
+      }
+      if (type === "products") {
+        adminProductsNotificationsOpen = !adminProductsNotificationsOpen;
+        if (adminProductsNotificationsOpen) markAdminNotificationsSeen("productUpdates");
+      }
+      render();
+    }),
+  );
+  document.querySelectorAll("[data-notification-hash]").forEach((button) =>
+    button.addEventListener("click", () => {
+      const targetHash = String(button.dataset.notificationHash || "/account");
+      pendingAccountTargetId = String(button.dataset.accountTarget || "");
+      customerNotificationsOpen = false;
+      topbarNotificationsOpen = false;
+      markCustomerNotificationsSeen(getState().currentUser?.email);
+      location.hash = targetHash.startsWith("/") ? targetHash : `/${targetHash.replace(/^#?\/?/, "")}`;
+    }),
+  );
+  document.querySelector("#signout-toggle")?.addEventListener("click", () => {
+    signOut();
+    adminCustomersNotificationsOpen = false;
+    adminProductsNotificationsOpen = false;
+    location.hash = "/";
+  });
+  document.querySelector("#account-signout")?.addEventListener("click", () => {
+    signOut();
+    customerNotificationsOpen = false;
+    topbarNotificationsOpen = false;
+    adminCustomersNotificationsOpen = false;
+    adminProductsNotificationsOpen = false;
+    location.hash = "/";
+  });
+  document.querySelector("#cart-overlay")?.addEventListener("click", () => toggleCart(false));
   document.querySelector("#hero-cart")?.addEventListener("click", () => toggleCart(true));
   document.querySelector("#close-cart")?.addEventListener("click", () => toggleCart(false));
   document.querySelector("#clear-cart")?.addEventListener("click", () => clearCart());
 
   document.querySelectorAll(".add-to-cart").forEach((button) =>
-    button.addEventListener("click", () => addToCart(Number(button.dataset.productId))),
+    button.addEventListener("click", () => {
+      if (!getState().isAuthenticated) {
+        location.hash = "/auth/signin";
+        return;
+      }
+      addToCart(Number(button.dataset.productId));
+    }),
   );
 
   document.querySelectorAll(".category-trigger").forEach((button) =>
@@ -776,6 +1490,10 @@ function bindEvents(currentRoute) {
   );
 
   document.querySelector("#buy-now")?.addEventListener("click", (event) => {
+    if (!getState().isAuthenticated) {
+      location.hash = "/auth/signin";
+      return;
+    }
     addToCart(Number(event.currentTarget.dataset.productId));
     location.hash = "/checkout";
   });
@@ -785,14 +1503,29 @@ function bindEvents(currentRoute) {
     const form = new FormData(event.currentTarget);
     const state = getState();
     const cartSummary = summarizeCart(state.products, state.cart);
+    
+    // Validate required fields
+    const fullName = form.get("fullName");
+    const phone = form.get("phone");
+    const district = form.get("district");
+    const address = form.get("address");
+    
+    if (!fullName || !phone || !district || !address) {
+      alert("Please fill in all required fields including delivery address.");
+      return;
+    }
+    
     const ok = await completeOrder({
-      fullName: form.get("fullName"),
-      phone: form.get("phone"),
-      district: form.get("district"),
+      fullName,
+      phone,
+      district,
       paymentMethod: form.get("paymentMethod"),
       momoNumber: form.get("momoNumber"),
-      address: form.get("address"),
+      address,
       notes: form.get("notes"),
+      customerEmail: getState().currentUser?.email || "",
+      customerLocation: customerLocationState,
+      nearestBranch: nearestBranchState,
       items: cartSummary.items.map((item) => ({
         productId: item.product.id,
         name: item.product.name,
@@ -811,11 +1544,16 @@ function bindEvents(currentRoute) {
   document.querySelector("#signin-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const portal = "";
     const ok = await loginAccount({
       email: form.get("email"),
       password: form.get("password"),
+      portal,
     });
-    if (ok) location.hash = "/";
+    if (ok) {
+      const role = getState().currentUser?.role;
+      location.hash = role === "admin" ? "/admin" : "/";
+    }
   });
 
   document.querySelector("#contact-form")?.addEventListener("submit", async (event) => {
@@ -843,7 +1581,6 @@ function bindEvents(currentRoute) {
     const ok = await registerAccount({
       fullName: form.get("fullName"),
       email: form.get("email"),
-      role: form.get("role"),
       password,
     });
     if (ok) location.hash = "/";
@@ -866,9 +1603,235 @@ function bindEvents(currentRoute) {
   });
 
   document.querySelector("#google-login")?.addEventListener("click", async () => {
-    const ok = await loginWithGoogle();
-    if (ok) location.hash = "/";
+    startGoogleRedirect();
   });
+
+  document.querySelector("#admin-profile-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const password = String(form.get("password") || "");
+    const confirmPassword = String(form.get("confirmPassword") || "");
+    if (password && password !== confirmPassword) {
+      setAuthFeedback("passwordMismatch");
+      return;
+    }
+
+    const ok = await updateAccountProfile({
+      email: getState().currentUser?.email,
+      fullName: form.get("fullName"),
+      password,
+    });
+    if (ok) {
+      event.currentTarget.reset();
+      location.hash = "/account";
+    }
+  });
+  document.querySelector("#customer-profile-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const password = String(form.get("password") || "");
+    const confirmPassword = String(form.get("confirmPassword") || "");
+    if (password && password !== confirmPassword) {
+      setAuthFeedback("passwordMismatch");
+      return;
+    }
+
+    const ok = await updateAccountProfile({
+      email: getState().currentUser?.email,
+      fullName: form.get("fullName"),
+      password,
+    });
+    if (ok) {
+      location.hash = "/account";
+    }
+  });
+
+  document.querySelector("#admin-product-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const ok = saveProduct({
+      name: form.get("name"),
+      category: form.get("category"),
+      unit: form.get("unit"),
+      price: form.get("price"),
+      image: form.get("image"),
+      inStock: form.get("inStock"),
+    });
+    if (ok) {
+      event.currentTarget.reset();
+    }
+  });
+
+  document.querySelectorAll(".admin-price-form").forEach((formElement) =>
+    formElement.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      saveProduct({
+        id: Number(event.currentTarget.dataset.productId),
+        price: form.get("price"),
+        image: form.get("image"),
+        inStock: form.get("inStock"),
+      });
+    }),
+  );
+
+  document.querySelectorAll(".admin-reply-form").forEach((formElement) =>
+    formElement.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      const ok = await sendSupportReply({
+        messageId: Number(event.currentTarget.dataset.messageId),
+        reply: form.get("reply"),
+      });
+      if (ok) {
+        event.currentTarget.reset();
+      }
+    }),
+  );
+
+  document.querySelector("#customer-chat-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const state = getState();
+    const ok = await sendSupportMessage({
+      fullName: state.currentUser?.fullName || "Customer",
+      email: state.currentUser?.email || "",
+      message: form.get("message"),
+    });
+    if (ok) {
+      event.currentTarget.reset();
+      requestAnimationFrame(() => {
+        document.getElementById("customer-chatbox")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+  });
+
+  document.querySelector("#account-open-cart")?.addEventListener("click", () => toggleCart(true));
+
+  document.querySelectorAll(".admin-customer-toggle").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const email = btn.dataset.customerEmail || "";
+      adminOpenCustomerEmail = adminOpenCustomerEmail === email ? "" : email;
+      render();
+    }),
+  );
+
+  document.querySelectorAll(".branch-focus-btn").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const idx = Number(btn.dataset.branchIdx);
+      const branch = SIMBA_BRANCHES[idx];
+      if (!branch || !branchMapInstance) return;
+      branchMapInstance.setView([branch.lat, branch.lng], 15, { animate: true });
+      branchMarkers[idx]?.openPopup();
+      document.getElementById("branches-map")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }),
+  );
+
+  document.querySelector("#locate-me-btn")?.addEventListener("click", () => requestUserLocation());
+  document.querySelector("#checkout-locate-btn")?.addEventListener("click", () => requestUserLocation());
+
+  document.querySelector("#branch-search-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const query = document.querySelector("#branch-location-input")?.value?.trim();
+    if (!query) return;
+    const btn = event.target.querySelector("button");
+    if (btn) btn.textContent = "⏳";
+    locationStatusState = "locating";
+    render();
+    
+    try {
+      // Use OpenStreetMap Nominatim API with better error handling
+      const attempts = [
+        `${query}, Kigali, Rwanda`,
+        `${query}, Rwanda`,
+        query,
+      ];
+      let results = [];
+      
+      for (const q of attempts) {
+        try {
+          const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&accept-language=en&countrycodes=rw`;
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+          
+          const res = await fetch(url, { 
+            signal: controller.signal,
+            headers: {
+              'User-Agent': 'Simba-Supermarket-App/2.0'
+            }
+          });
+          clearTimeout(timeoutId);
+          
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          results = await res.json();
+          if (results && results.length > 0) break;
+        } catch (fetchError) {
+          console.warn(`Failed to geocode "${q}":`, fetchError.message);
+          continue;
+        }
+      }
+      
+      if (!results || !results.length) {
+        locationStatusState = "error";
+        if (btn) btn.textContent = "🔍";
+        render();
+        return;
+      }
+      
+      const bestResult = results[0];
+      customerLocationState = { 
+        lat: parseFloat(bestResult.lat), 
+        lng: parseFloat(bestResult.lon) 
+      };
+      nearestBranchState = findNearestBranch(customerLocationState.lat, customerLocationState.lng);
+      locationStatusState = "";
+      if (btn) btn.textContent = "🔍";
+      render();
+      
+    } catch (err) {
+      console.error('Location search error:', err);
+      locationStatusState = "error";
+      if (btn) btn.textContent = "🔍";
+      render();
+    }
+  });
+
+  document.querySelector("#customer-notifications-toggle")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    customerNotificationsOpen = !customerNotificationsOpen;
+    if (customerNotificationsOpen) {
+      markCustomerNotificationsSeen(getState().currentUser?.email);
+    }
+    render();
+  });
+  document.querySelector("#topbar-notifications-toggle")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    topbarNotificationsOpen = !topbarNotificationsOpen;
+    if (topbarNotificationsOpen) {
+      markCustomerNotificationsSeen(getState().currentUser?.email);
+    }
+    render();
+  });
+
+  if (currentRoute.name === "admin" && pendingAdminPanel) {
+    requestAnimationFrame(() => {
+      document.getElementById(pendingAdminPanel)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (pendingAdminTargetId) {
+        setTimeout(() => {
+          document.getElementById(pendingAdminTargetId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+          pendingAdminTargetId = "";
+        }, 120);
+      }
+      pendingAdminPanel = "";
+    });
+  }
+
+  if (currentRoute.name === "account" && pendingAccountTargetId) {
+    requestAnimationFrame(() => {
+      document.getElementById(pendingAccountTargetId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      pendingAccountTargetId = "";
+    });
+  }
 
   if (currentRoute.name === "checkout") {
     clearContactFeedback();
@@ -885,10 +1848,517 @@ function bindEvents(currentRoute) {
   }
 
   if (currentRoute.name !== "checkout") clearCheckoutFeedback();
-  if (!["auth", "home"].includes(currentRoute.name)) {
+  if (currentRoute.name !== "admin" && currentRoute.name !== "account") clearAdminFeedback();
+  if (!["auth", "home", "account"].includes(currentRoute.name)) {
     clearAuthFeedback();
     clearContactFeedback();
   }
+}
+
+function getNotificationSeenMap() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.customerNotificationSeenAt);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function setNotificationSeenMap(value) {
+  localStorage.setItem(STORAGE_KEYS.customerNotificationSeenAt, JSON.stringify(value));
+}
+
+function markCustomerNotificationsSeen(email) {
+  const key = String(email || "").toLowerCase();
+  if (!key) return;
+  const seenMap = getNotificationSeenMap();
+  seenMap[key] = new Date().toISOString();
+  setNotificationSeenMap(seenMap);
+}
+
+function getCustomerNotifications(state, tr) {
+  if (state.currentUser?.role !== "customer") return [];
+  const customerEmail = String(state.currentUser?.email || "").toLowerCase();
+  if (!customerEmail) return [];
+
+  return (state.customerNotificationFeed || [])
+    .filter((entry) => {
+      const targetEmail = String(entry.email || "").toLowerCase();
+      return targetEmail === customerEmail || targetEmail === "*";
+    })
+    .map((entry) => ({
+      ...entry,
+      kindLabel:
+        entry.kindLabel ||
+        (String(entry.kind || "").startsWith("message")
+          ? tr("customerNotificationTypeMessage")
+          : tr("customerNotificationTypeProduct")),
+      actionLabel: entry.actionLabel || tr("customerNotificationOpenAction"),
+    }))
+    .filter((entry) => entry.createdAt)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+function renderCustomerNotificationSections(notifications, tr) {
+  if (!notifications.length) {
+    return `<p class="muted">${tr("customerNotificationsEmpty")}</p>`;
+  }
+
+  const groups = [
+    {
+      key: "message",
+      title: tr("customerNotificationGroupMessages"),
+      items: notifications.filter((note) => String(note.kind || "").startsWith("message")),
+    },
+    {
+      key: "price",
+      title: tr("customerNotificationGroupPrices"),
+      items: notifications.filter((note) => String(note.kind || "").includes("price")),
+    },
+    {
+      key: "product",
+      title: tr("customerNotificationGroupProducts"),
+      items: notifications.filter(
+        (note) =>
+          !String(note.kind || "").startsWith("message") && !String(note.kind || "").includes("price"),
+      ),
+    },
+  ].filter((group) => group.items.length);
+
+  return groups
+    .map(
+      (group) => `
+        <section class="notification-group">
+          <div class="notification-group__title">${escapeHtml(group.title)}</div>
+          <div class="notification-group__list">
+            ${group.items
+              .map((note) => {
+                const isMessage = String(note.kind || "").startsWith("message");
+                const isPrice = String(note.kind || "").includes("price");
+                const isNew = String(note.kind || "").includes("new");
+                const hash = isMessage ? "/account" : (note.targetHash || "/account");
+                const target = isMessage ? "customer-chatbox" : (note.targetId || "");
+                const timeAgo = getTimeAgo(note.createdAt);
+                return `
+                  <button class="account-notification-item" type="button"
+                    data-notification-hash="${escapeHtml(hash)}"
+                    data-account-target="${escapeHtml(target)}">
+                    <div class="notification-header">
+                      <span class="pill notification-type">${escapeHtml(note.kindLabel || tr("customerNotificationGeneralType"))}</span>
+                      <span class="notification-time">${timeAgo}</span>
+                    </div>
+                    <div class="notification-content">
+                      <strong class="notification-title">${escapeHtml(note.title)}</strong>
+                      <p class="notification-text">${escapeHtml(note.text)}</p>
+                      ${note.meta ? `<span class="notification-meta">${escapeHtml(note.meta)}</span>` : ""}
+                    </div>
+                    <div class="notification-action">
+                      <span class="notification-action-text">${escapeHtml(isMessage ? tr("customerChatboxTitle") : isPrice ? tr("customerNotificationPriceTitle") : isNew ? tr("customerNotificationNewProductTitle") : tr("customerNotificationOpenAction"))}</span>
+                      <span class="notification-arrow">→</span>
+                    </div>
+                  </button>
+                `;
+              })
+              .join("")}
+          </div>
+        </section>
+      `,
+    )
+    .join("");
+}
+
+function captureSearchInputState() {
+  const searchInput = document.querySelector("#search-input");
+  if (!searchInput || document.activeElement !== searchInput) {
+    searchInputState = null;
+    return;
+  }
+
+  searchInputState = {
+    value: searchInput.value,
+    selectionStart: searchInput.selectionStart ?? searchInput.value.length,
+    selectionEnd: searchInput.selectionEnd ?? searchInput.value.length,
+  };
+}
+
+function restoreSearchInputState() {
+  if (!searchInputState) return;
+  const searchInput = document.querySelector("#search-input");
+  if (!searchInput) {
+    searchInputState = null;
+    return;
+  }
+
+  searchInput.focus({ preventScroll: true });
+  const nextLength = searchInput.value.length;
+  const nextStart = Math.min(searchInputState.selectionStart, nextLength);
+  const nextEnd = Math.min(searchInputState.selectionEnd, nextLength);
+  searchInput.setSelectionRange(nextStart, nextEnd);
+  searchInputState = null;
+}
+
+function getUnreadCustomerNotificationCount(state) {
+  if (state.currentUser?.role !== "customer") return 0;
+  const customerEmail = String(state.currentUser?.email || "").toLowerCase();
+  if (!customerEmail) return 0;
+
+  const seenMap = getNotificationSeenMap();
+  const seenAt = seenMap[customerEmail] ? new Date(seenMap[customerEmail]).getTime() : 0;
+
+  return (state.customerNotificationFeed || []).filter((entry) => {
+    const targetEmail = String(entry.email || "").toLowerCase();
+    const createdAt = new Date(entry.createdAt || 0).getTime();
+    return (targetEmail === customerEmail || targetEmail === "*") && createdAt > seenAt;
+  }).length;
+}
+
+function getAdminNotificationSeenMap() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.adminNotificationSeenAt);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function setAdminNotificationSeenMap(value) {
+  localStorage.setItem(STORAGE_KEYS.adminNotificationSeenAt, JSON.stringify(value));
+}
+
+function markAdminNotificationsSeen(type) {
+  const seenMap = getAdminNotificationSeenMap();
+  seenMap[type] = new Date().toISOString();
+  setAdminNotificationSeenMap(seenMap);
+}
+
+function getAdminNotifications(state, tr) {
+  const seenMap = getAdminNotificationSeenMap();
+  const seenMessagesAt = seenMap.customerMessages ? new Date(seenMap.customerMessages).getTime() : 0;
+  const seenProductsAt = seenMap.productUpdates ? new Date(seenMap.productUpdates).getTime() : 0;
+
+  const customerMessages = (state.messages || [])
+    .filter((message) => new Date(message.createdAt || 0).getTime() > seenMessagesAt)
+    .map((message) => ({
+      id: message.id,
+      createdAt: message.createdAt,
+      title: `${message.fullName} (${message.email})`,
+      text: message.message,
+    }))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  const productUpdates = state.products
+    .filter((product) => {
+      const createdAt = new Date(product.createdAt || 0).getTime();
+      const changedAt = new Date(product.priceChangedAt || product.updatedAt || 0).getTime();
+      return (product.addedByAdmin && createdAt > seenProductsAt) || changedAt > seenProductsAt;
+    })
+    .map((product) => {
+      const hasPreviousPrice = Number.isFinite(Number(product.previousPrice));
+      const text = hasPreviousPrice
+        ? `${formatPrice(Number(product.previousPrice))} -> ${formatPrice(product.price)}`
+        : `${tr("customerNotificationPriceBody")} ${formatPrice(product.price)}`;
+      return {
+        id: product.id,
+        createdAt: product.priceChangedAt || product.updatedAt || product.createdAt,
+        title: product.name,
+        text,
+      };
+    })
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  return { customerMessages, productUpdates };
+}
+
+function haversineDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function findNearestBranch(lat, lng) {
+  return SIMBA_BRANCHES.reduce((nearest, branch) => {
+    const dist = haversineDistance(lat, lng, branch.lat, branch.lng);
+    return !nearest || dist < nearest.dist ? { ...branch, dist } : nearest;
+  }, null);
+}
+
+function requestUserLocation() {
+  if (!navigator.geolocation) {
+    locationStatusState = "error";
+    render();
+    return;
+  }
+  
+  locationStatusState = "locating";
+  render();
+  
+  const options = {
+    enableHighAccuracy: true,
+    timeout: 15000,
+    maximumAge: 300000 // 5 minutes
+  };
+  
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      customerLocationState = { 
+        lat: pos.coords.latitude, 
+        lng: pos.coords.longitude 
+      };
+      nearestBranchState = findNearestBranch(customerLocationState.lat, customerLocationState.lng);
+      locationStatusState = "";
+      render();
+    },
+    (err) => {
+      console.error('Geolocation error:', err);
+      switch(err.code) {
+        case err.PERMISSION_DENIED:
+          locationStatusState = "denied";
+          break;
+        case err.POSITION_UNAVAILABLE:
+          locationStatusState = "error";
+          break;
+        case err.TIMEOUT:
+          locationStatusState = "error";
+          break;
+        default:
+          locationStatusState = "error";
+          break;
+      }
+      render();
+    },
+    options
+  );
+}
+
+function loadLeaflet(callback) {
+  if (window.L) { callback(); return; }
+  if (window.__leafletLoading) { window.__leafletCallbacks.push(callback); return; }
+  window.__leafletLoading = true;
+  window.__leafletCallbacks = [callback];
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+  document.head.appendChild(link);
+  const script = document.createElement("script");
+  script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+  script.onload = () => {
+    window.__leafletLoading = false;
+    window.__leafletCallbacks.forEach((fn) => fn());
+    window.__leafletCallbacks = [];
+  };
+  document.head.appendChild(script);
+}
+
+function initBranchesMap() {
+  const mapEl = document.getElementById("branches-map");
+  if (!mapEl || branchMapInitialized) return;
+  branchMapInitialized = true;
+  loadLeaflet(() => {
+    mountBranchesMap(document.getElementById("branches-map"));
+    mountAdminOrdersMap();
+    mountAdminCustomersMap();
+  });
+}
+
+function makeIcon(color, size = 12) {
+  return window.L.divIcon({
+    className: "",
+    html: `<div style="background:${color};width:${size}px;height:${size}px;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+let branchMapInstance = null;
+let branchMarkers = [];
+
+function mountBranchesMap(mapEl) {
+  if (!mapEl || !window.L) return;
+  const L = window.L;
+  const center = customerLocationState
+    ? [customerLocationState.lat, customerLocationState.lng]
+    : [-1.9441, 30.0619];
+  const zoom = customerLocationState ? 13 : 11;
+  const map = L.map(mapEl).setView(center, zoom);
+  branchMapInstance = map;
+  branchMarkers = [];
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 19,
+  }).addTo(map);
+  SIMBA_BRANCHES.forEach((branch) => {
+    const isNearest = nearestBranchState?.id === branch.id;
+    const marker = L.marker([branch.lat, branch.lng], { icon: makeIcon(isNearest ? "#13806d" : "#f57c00", isNearest ? 14 : 12) })
+      .addTo(map)
+      .bindPopup(`<strong>${branch.name}</strong><br><span style="color:#666;font-size:13px">${branch.address}</span>`);
+    branchMarkers.push(marker);
+  });
+  if (customerLocationState && nearestBranchState) {
+    const userLatLng = [customerLocationState.lat, customerLocationState.lng];
+    const branchLatLng = [nearestBranchState.lat, nearestBranchState.lng];
+    L.marker(userLatLng, { icon: makeIcon("#1a73e8", 14) })
+      .addTo(map)
+      .bindPopup("<strong>You are here</strong>")
+      .openPopup();
+    L.polyline([userLatLng, branchLatLng], { color: "#1a73e8", weight: 3, dashArray: "6 6" }).addTo(map);
+    const dist = haversineDistance(customerLocationState.lat, customerLocationState.lng, nearestBranchState.lat, nearestBranchState.lng);
+    const mid = [(userLatLng[0] + branchLatLng[0]) / 2, (userLatLng[1] + branchLatLng[1]) / 2];
+    L.marker(mid, {
+      icon: L.divIcon({
+        className: "",
+        html: `<div style="background:#1a73e8;color:#fff;padding:2px 7px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.3)">${dist.toFixed(1)} km</div>`,
+        iconAnchor: [30, 10],
+      }),
+    }).addTo(map);
+    map.fitBounds([userLatLng, branchLatLng], { padding: [40, 40] });
+  } else if (customerLocationState) {
+    L.marker([customerLocationState.lat, customerLocationState.lng], { icon: makeIcon("#1a73e8", 14) })
+      .addTo(map)
+      .bindPopup("<strong>You are here</strong>")
+      .openPopup();
+  }
+}
+
+function mountAdminCustomersMap() {
+  const mapEl = document.getElementById("admin-customers-map");
+  if (!mapEl || !window.L) return;
+  const L = window.L;
+  const state = getState();
+  const customersWithLocation = state.users.filter((user) => user.role === "customer" && user.lastKnownLocation);
+  
+  // Clear any existing map
+  if (mapEl._leaflet_id) {
+    mapEl._leaflet_id = null;
+    mapEl.innerHTML = '';
+  }
+  
+  const map = L.map(mapEl).setView([-1.9441, 30.0619], 11);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 19,
+  }).addTo(map);
+  
+  // Add Simba branches
+  SIMBA_BRANCHES.forEach((branch) => {
+    L.marker([branch.lat, branch.lng], { icon: makeIcon("#f57c00", 12) })
+      .addTo(map)
+      .bindPopup(`<strong>${branch.name}</strong><br><span style="color:#666;font-size:12px">${branch.address}</span>`);
+  });
+  
+  const bounds = [];
+  customersWithLocation.forEach((customer) => {
+    const { lat, lng } = customer.lastKnownLocation;
+    bounds.push([lat, lng]);
+    const customerLatLng = [lat, lng];
+    
+    // Customer location marker
+    L.marker(customerLatLng, { icon: makeIcon("#4dd4c8", 12) })
+      .addTo(map)
+      .bindPopup(`
+        <div style="min-width:180px">
+          <strong>${customer.fullName || 'Customer'}</strong><br>
+          <span style="color:#666;font-size:12px">${customer.email}</span><br>
+          <span style="color:#666;font-size:12px">📍 Location shared</span>
+        </div>
+      `);
+  });
+  
+  if (bounds.length) {
+    map.fitBounds(bounds, { padding: [20, 20] });
+  }
+}
+
+function mountAdminOrdersMap() {
+  const mapEl = document.getElementById("admin-orders-map");
+  if (!mapEl || !window.L) return;
+  const L = window.L;
+  const state = getState();
+  const ordersWithLocation = state.orders.filter((o) => o.customer?.location);
+  
+  // Clear any existing map
+  if (mapEl._leaflet_id) {
+    mapEl._leaflet_id = null;
+    mapEl.innerHTML = '';
+  }
+  
+  const map = L.map(mapEl).setView([-1.9441, 30.0619], 11);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 19,
+  }).addTo(map);
+  
+  // Add Simba branches
+  SIMBA_BRANCHES.forEach((branch) => {
+    L.marker([branch.lat, branch.lng], { icon: makeIcon("#f57c00", 14) })
+      .addTo(map)
+      .bindPopup(`<strong>${branch.name}</strong><br><span style="color:#666;font-size:12px">${branch.address}</span>`);
+  });
+  
+  const bounds = [];
+  ordersWithLocation.forEach((order, index) => {
+    const { lat, lng } = order.customer.location;
+    bounds.push([lat, lng]);
+    const customerLatLng = [lat, lng];
+    
+    // Customer location marker
+    L.marker(customerLatLng, { icon: makeIcon("#13806d", 14) })
+      .addTo(map)
+      .bindPopup(`
+        <div style="min-width:200px">
+          <strong>${order.customer.fullName}</strong><br>
+          <span style="color:#666;font-size:12px">${order.reference}</span><br>
+          <span style="color:#666;font-size:12px">📮 ${order.customer.address || 'No address'}</span><br>
+          <span style="color:#666;font-size:12px">📞 ${order.customer.phone || 'No phone'}</span><br>
+          ${order.customer.nearestBranch ? `<span style="color:#666;font-size:12px">📍 ${order.customer.nearestBranch.name}</span>` : ""}
+        </div>
+      `);
+    
+    // Draw line to nearest branch if available
+    if (order.customer.nearestBranch) {
+      const nb = SIMBA_BRANCHES.find((b) => b.id === order.customer.nearestBranch.id) || order.customer.nearestBranch;
+      const branchLatLng = [nb.lat, nb.lng];
+      L.polyline([customerLatLng, branchLatLng], { 
+        color: "#13806d", 
+        weight: 2, 
+        dashArray: "5 5",
+        opacity: 0.7
+      }).addTo(map);
+      
+      const dist = haversineDistance(lat, lng, nb.lat, nb.lng);
+      const mid = [(customerLatLng[0] + branchLatLng[0]) / 2, (customerLatLng[1] + branchLatLng[1]) / 2];
+      L.marker(mid, {
+        icon: L.divIcon({
+          className: "",
+          html: `<div style="background:#13806d;color:#fff;padding:2px 6px;border-radius:999px;font-size:10px;font-weight:700;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,.3)">${dist.toFixed(1)} km</div>`,
+          iconAnchor: [25, 10],
+        }),
+      }).addTo(map);
+    }
+  });
+  
+  if (bounds.length) {
+    map.fitBounds(bounds, { padding: [20, 20] });
+  }
+}
+
+function getTimeAgo(dateString) {
+  if (!dateString) return "";
+  const now = new Date();
+  const date = new Date(dateString);
+  const diffMs = now - date;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+  
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
 }
 
 function escapeHtml(value) {
@@ -898,4 +2368,64 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function generateNonce() {
+  const buffer = new Uint8Array(16);
+  crypto.getRandomValues(buffer);
+  return Array.from(buffer, (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function isGoogleConfigured() {
+  return Boolean(GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.includes("YOUR_GOOGLE_CLIENT_ID"));
+}
+
+function getGoogleRedirectUri() {
+  return `${window.location.origin}${window.location.pathname}?google-auth=1`;
+}
+
+function startGoogleRedirect() {
+  if (!isGoogleConfigured()) {
+    setAuthFeedback("googleSetupRequired");
+    return;
+  }
+
+  const nonce = generateNonce();
+  const state = generateNonce();
+  sessionStorage.setItem(STORAGE_KEYS.googleNonce, nonce);
+
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: getGoogleRedirectUri(),
+    response_type: "id_token",
+    scope: "openid email profile",
+    nonce,
+    state,
+    prompt: "select_account",
+  });
+
+  window.location.assign(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+}
+
+async function handleGoogleAuthCallback() {
+  const isGoogleCallback = window.location.search.includes("google-auth=1");
+  if (!isGoogleCallback) return;
+
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const googleError = hashParams.get("error");
+  const idToken = hashParams.get("id_token");
+  const nonce = sessionStorage.getItem(STORAGE_KEYS.googleNonce) || "";
+
+  history.replaceState(null, "", `${window.location.pathname}#/`);
+  sessionStorage.removeItem(STORAGE_KEYS.googleNonce);
+
+  if (googleError || !idToken) {
+    setAuthFeedback("googleCancelled");
+    return;
+  }
+
+  const ok = await loginWithGoogle({ idToken, nonce });
+  if (ok) {
+    location.hash = "/";
+  }
 }
