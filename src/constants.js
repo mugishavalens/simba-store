@@ -18,7 +18,7 @@ export const STORAGE_KEYS = {
   branchReviews: "simba.branch-reviews.v1",
 };
 
-export const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
+export const GOOGLE_CLIENT_ID = "258086530526-78tsu8svfh76n6l999qe17ihvoc3q8vl.apps.googleusercontent.com";
 
 export const LANGUAGES = ["en", "fr", "rw"];
 

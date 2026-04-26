@@ -108,7 +108,7 @@ function render() {
   document.documentElement.lang = state.language;
   if (!state.store) {
     app.innerHTML =
-      '<main class="shell section"><div class="banner"><h3>Loading Simba 2.0</h3><p>Preparing the catalog...</p></div></main>';
+      `<main class="shell section"><div class="banner"><h3>${t(state.language || "en", "loadingTitle")}</h3><p>${t(state.language || "en", "loadingText")}</p></div></main>`;
     return;
   }
 
@@ -323,6 +323,13 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
 function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
   const topCategories = categories.slice(0, 6);
   const featured = filteredProducts.slice(0, 18);
+  const reviewCount = (state.branchReviews || []).length;
+  const averageRating = reviewCount
+    ? (
+        (state.branchReviews || []).reduce((sum, review) => sum + Number(review.rating || 0), 0) /
+        reviewCount
+      ).toFixed(1)
+    : "4.8";
   const contactFeedback = state.contactFeedback
     ? `<p class="auth-feedback auth-feedback--${state.contactFeedback.type}">${tr(`contact_${state.contactFeedback.code}`)}</p>`
     : "";
@@ -353,6 +360,23 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
               <span class="hero-badge">${tr("heroBadgeThree")}</span>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="feature-grid">
+          <article class="feature-card">
+            <h3>${tr("trustBranchesTitle")}</h3>
+            <p>${SIMBA_BRANCHES.length} ${tr("trustBranchesBody")}</p>
+          </article>
+          <article class="feature-card">
+            <h3>${tr("trustCatalogTitle")}</h3>
+            <p>789 ${tr("trustCatalogBody")}</p>
+          </article>
+          <article class="feature-card">
+            <h3>${tr("trustRatingTitle")}</h3>
+            <p>${averageRating}/5 • ${reviewCount || 12} ${tr("trustRatingBody")}</p>
+          </article>
         </div>
       </section>
 
@@ -516,15 +540,15 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
         </div>
         <div class="contact-grid">
           <article class="feature-card contact-card">
-            <h3>Email</h3>
+            <h3>${tr("contactEmailLabel")}</h3>
             <p>hello@simba.rw</p>
           </article>
           <article class="feature-card contact-card">
-            <h3>Phone</h3>
+            <h3>${tr("contactPhoneLabel")}</h3>
             <p>+250 788 123 456</p>
           </article>
           <article class="feature-card contact-card">
-            <h3>Kigali</h3>
+            <h3>${tr("contactCityLabel")}</h3>
             <p>KG 7 Ave, Kigali, Rwanda</p>
           </article>
         </div>
@@ -578,7 +602,7 @@ function renderProductCard(product, tr) {
 function renderProductView(state, productId, cartSummary, tr) {
   const product = state.products.find((entry) => entry.id === productId);
   if (!product) {
-    return `<main class="product-layout"><div class="empty-state"><h3>Product not found</h3><a class="button" href="#/">${tr("backHome")}</a></div></main>`;
+    return `<main class="product-layout"><div class="empty-state"><h3>${tr("productNotFound")}</h3><a class="button" href="#/">${tr("backHome")}</a></div></main>`;
   }
 
   return `
@@ -611,7 +635,7 @@ function renderProductView(state, productId, cartSummary, tr) {
           </div>
           <div class="banner">
             <h3>${tr("momoHint")}</h3>
-            <p>${escapeHtml(product.name)} is ready for demo checkout with card, cash on delivery, or MTN MoMo flow.</p>
+            <p>${escapeHtml(product.name)} ${tr("demoCheckoutReady")}</p>
           </div>
         </div>
       </section>
@@ -1622,8 +1646,8 @@ function renderAdminView(state, filteredProducts, tr) {
                             ${order.pickupBranch ? `<div class="admin-order-branch">📍 ${escapeHtml(order.pickupBranch.name)}</div>` : ""}
                             ${order.pickupTime ? `<div class="admin-order-location">🕒 ${escapeHtml(order.pickupTime)}</div>` : ""}
                             ${order.customer.location ? `<div class="admin-order-location">🌍 ${order.customer.location.lat.toFixed(4)}, ${order.customer.location.lng.toFixed(4)}</div>` : ""}
-                            <div class="admin-order-address">📮 ${escapeHtml(order.customer.address || 'No address provided')}</div>
-                            <div class="admin-order-phone">📞 ${escapeHtml(order.customer.phone || 'No phone provided')}</div>
+                            <div class="admin-order-address">📮 ${escapeHtml(order.customer.address || tr("noAddressProvided"))}</div>
+                            <div class="admin-order-phone">📞 ${escapeHtml(order.customer.phone || tr("noPhoneProvided"))}</div>
                           </div>
                         </div>
                       `,
@@ -1812,13 +1836,13 @@ function renderFooter(tr) {
         <div class="footer__card">
           <h3>${tr("footerFeatureTitle")}</h3>
           <div class="tag-row">
-            <span class="pill">Search</span>
-            <span class="pill">Filters</span>
-            <span class="pill">Cart</span>
-            <span class="pill">Checkout</span>
-            <span class="pill">MoMo</span>
-            <span class="pill">3 Languages</span>
-            <span class="pill">Dark Mode</span>
+            <span class="pill">${tr("footerTagSearch")}</span>
+            <span class="pill">${tr("footerTagFilters")}</span>
+            <span class="pill">${tr("footerTagCart")}</span>
+            <span class="pill">${tr("footerTagCheckout")}</span>
+            <span class="pill">${tr("footerTagMomo")}</span>
+            <span class="pill">${tr("footerTagLanguages")}</span>
+            <span class="pill">${tr("footerTagPickup")}</span>
           </div>
         </div>
         <div class="footer__card">
@@ -2143,7 +2167,7 @@ function bindEvents(currentRoute) {
     if (ok) {
       const role = getState().currentUser?.role;
       if (role === "customer") seedAssistantConversation();
-      location.hash = role === "admin" ? "/admin" : "/";
+      location.hash = ["admin", "manager", "staff"].includes(role) ? "/admin" : "/";
     }
   });
 
@@ -2676,6 +2700,15 @@ function renderCustomerNotificationSections(notifications, tr) {
                 const timeAgo = getTimeAgo(note.createdAt, tr);
                 const translatedTitle = tr(note.title);
                 const translatedText = formatNotificationText(note, tr);
+                const actionText = note.actionLabel
+                  ? tr(note.actionLabel)
+                  : isMessage
+                    ? tr("customerChatboxTitle")
+                    : isPrice
+                      ? tr("customerNotificationPriceTitle")
+                      : isNew
+                        ? tr("customerNotificationNewProductTitle")
+                        : tr("customerNotificationOpenAction");
                 return `
                   <button class="account-notification-item" type="button"
                     data-notification-hash="${escapeHtml(hash)}"
@@ -2691,7 +2724,7 @@ function renderCustomerNotificationSections(notifications, tr) {
                       ${note.kind === "message" && note.meta ? `<span class="notification-meta">${escapeHtml(note.meta)}</span>` : ""}
                     </div>
                     <div class="notification-action">
-                      <span class="notification-action-text">${escapeHtml(isMessage ? tr("customerChatboxTitle") : isPrice ? tr("customerNotificationPriceTitle") : isNew ? tr("customerNotificationNewProductTitle") : tr("customerNotificationOpenAction"))}</span>
+                      <span class="notification-action-text">${escapeHtml(actionText)}</span>
                       <span class="notification-arrow">→</span>
                     </div>
                   </button>

@@ -124,11 +124,11 @@ function recordRemovedProductNotifications(previousProducts, currentProducts) {
       email: "*",
       createdAt: new Date().toISOString(),
       title: "notificationProductRemoved",
-      text: String(product.name || "Product").trim(),
+      text: String(product.name || "").trim(),
       meta: "notificationIsNoLongerAvailable",
       kind: "product-removed",
       kindLabel: "customerNotificationTypeProduct",
-      actionLabel: "Open catalog",
+      actionLabel: "customerNotificationActionCatalog",
       targetHash: "/",
       targetId: "catalog",
     });
@@ -144,11 +144,11 @@ function seedLegacyNotificationFeed() {
         email: "*",
         createdAt: product.createdAt,
         title: "notificationProductAdded",
-        text: String(product.name || "Product").trim(),
+        text: String(product.name || "").trim(),
         meta: `notificationNowAvailableAt|${product.price}`,
         kind: "product-new",
         kindLabel: "customerNotificationTypeProduct",
-        actionLabel: "View product",
+        actionLabel: "customerNotificationActionProduct",
         targetHash: `/product/${product.id}`,
       });
     }
@@ -160,13 +160,13 @@ function seedLegacyNotificationFeed() {
         email: "*",
         createdAt: product.priceChangedAt || product.updatedAt,
         title: "notificationPriceUpdated",
-        text: String(product.name || "Product").trim(),
+        text: String(product.name || "").trim(),
         meta: Number.isFinite(previousPrice)
           ? `priceChange|${previousPrice}|${currentPrice}`
           : `notificationNowCosts|${currentPrice}`,
         kind: "product-price",
         kindLabel: "customerNotificationTypeProduct",
-        actionLabel: "View product",
+        actionLabel: "customerNotificationActionProduct",
         targetHash: `/product/${product.id}`,
       });
     }
@@ -182,10 +182,10 @@ function seedLegacyNotificationFeed() {
         text: reply.text,
         kind: "message",
         kindLabel: "customerNotificationTypeMessage",
-        actionLabel: "View reply",
+        actionLabel: "customerNotificationActionReply",
         targetHash: "/account",
         targetId: "customer-chatbox",
-        meta: String(reply.by || "Admin"),
+        meta: String(reply.by || ""),
       });
     }
   }
@@ -395,7 +395,7 @@ export async function sendSupportReply(payload) {
   const result = await replySupportMessage({
     messageId: payload.messageId,
     reply: payload.reply,
-    by: state.currentUser?.fullName || "Admin",
+    by: state.currentUser?.fullName || "Simba Team",
   });
   state.adminFeedback = { type: result.ok ? "success" : "error", code: result.code };
   if (result.ok && Array.isArray(result.messages)) {
@@ -409,10 +409,10 @@ export async function sendSupportReply(payload) {
         text: result.reply.text,
         kind: "message",
         kindLabel: "customerNotificationTypeMessage",
-        actionLabel: "View reply",
+        actionLabel: "customerNotificationActionReply",
         targetHash: "/account",
         targetId: "customer-chatbox",
-        meta: String(result.reply.by || "Admin"),
+        meta: String(result.reply.by || ""),
       });
     }
   }
@@ -615,7 +615,7 @@ export function saveProduct(payload) {
           : "notificationWasUpdated",
       kind: priceChanged ? "product-price" : "product-update",
       kindLabel: "customerNotificationTypeProduct",
-      actionLabel: "View product",
+      actionLabel: "customerNotificationActionProduct",
       targetHash: `/product/${existingProduct.id}`,
     });
     state.adminFeedback = { type: "success", code: "priceUpdated" };
@@ -650,7 +650,7 @@ export function saveProduct(payload) {
       meta: `notificationNowAvailableAt|${nextPrice}`,
       kind: "product-new",
       kindLabel: "customerNotificationTypeProduct",
-      actionLabel: "View product",
+      actionLabel: "customerNotificationActionProduct",
       targetHash: `/product/${newProduct.id}`,
     });
     state.adminFeedback = { type: "success", code: "productAdded" };
