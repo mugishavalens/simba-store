@@ -751,7 +751,10 @@ function renderAssistantWidget(state, tr, currentRoute) {
                   <strong>${tr("assistantTitle")}</strong>
                   <p>${tr("assistantLead")}</p>
                 </div>
-                <button class="button button--ghost button--sm" id="assistant-close" type="button">${tr("close")}</button>
+                <div style="display:flex;gap:0.4rem;align-items:center">
+                  <button class="button button--ghost button--sm" id="assistant-clear" type="button">🗑</button>
+                  <button class="button button--ghost button--sm" id="assistant-close" type="button">${tr("close")}</button>
+                </div>
               </div>
               <div class="assistant-panel__messages">
                 ${visibleMessages
@@ -843,22 +846,6 @@ function getCheckoutPaymentGuide(paymentMethod, tr) {
   };
 }
 
-function seedAssistantConversation() {
-  const state = getState();
-  if (Array.isArray(state.assistantMessages) && state.assistantMessages.length) return;
-
-  setAssistantMessages([
-    {
-      id: Date.now(),
-      role: "assistant",
-      text: SHOPPING_ASSISTANT_PROMPT.includes("quickly")
-        ? "Ask me for products, categories, budget-friendly picks, or quick meal ideas from the Simba catalog."
-        : "Ask me about Simba products.",
-      products: [],
-    },
-  ]);
-}
-
 function normalizeAssistantToken(value) {
   return String(value || "")
     .toLowerCase()
@@ -920,34 +907,93 @@ function inferAssistantCategories(query, categories) {
   return inferred;
 }
 
-function buildAssistantReply(state, rawQuery, tr) {
+async function buildAssistantReply(state, rawQuery, tr) {
+  const language = state.language || "en";
+  const langName = language === "rw" ? "Kinyarwanda" : language === "fr" ? "French" : "English";
+
+  const query = normalizeAssistantToken(rawQuery);
+  const intentCategories = inferAssistantCategories(query, getCategories(state.products));
+
+  // Score and pre-filter products by relevance before sending to AI
+  const scored = state.products
+    .filter((p) => p.inStock)
+    .map((p) => ({ p, score: scoreAssistantProduct(p, query, intentCategories) }))
+    .filter((e) => e.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 30)
+    .map((e) => `- ${e.p.name} | ${e.p.category} | ${e.p.price} RWF`);
+
+  // If nothing scored, fall back to local reply immediately
+  if (scored.length === 0) return buildLocalAssistantReply(state, rawQuery, tr);
+
+  const systemPrompt = `You are a shopping assistant for Simba Supermarket in Kigali, Rwanda.
+Respond ONLY in ${langName}.
+You MUST only recommend products from the CATALOG below.
+NEVER suggest products not in the catalog.
+If the user asks for milk, ONLY suggest milk products from the catalog.
+If the user asks for bread, ONLY suggest bread products.
+Do NOT mix unrelated categories.
+Keep your reply to 1-2 sentences, then list up to 4 matching product names exactly as written in the catalog.
+
+CATALOG (pre-filtered for this query):
+${scored.join("\n")}`;
+
+  try {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+       
+      },
+      body: JSON.stringify({
+        model: "llama3-8b-8192",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: rawQuery },
+        ],
+        max_tokens: 200,
+        temperature: 0.1,
+      }),
+    });
+
+    if (!res.ok) throw new Error(`${res.status}`);
+    const data = await res.json();
+    const text = data.choices?.[0]?.message?.content?.trim();
+    if (!text) throw new Error("empty");
+
+    // Only show product chips that were in the pre-scored list
+    const scoredProducts = scored.map((line) => {
+      const name = line.replace(/^- /, "").split(" | ")[0];
+      return state.products.find((p) => p.name === name);
+    }).filter(Boolean);
+
+    const mentioned = scoredProducts.filter((p) =>
+      text.toLowerCase().includes(p.name.toLowerCase().slice(0, 12))
+    ).slice(0, 4);
+
+    return { text, products: mentioned.length ? mentioned : scoredProducts.slice(0, 3) };
+  } catch (err) {
+    console.error("Groq assistant error:", err.message);
+    return buildLocalAssistantReply(state, rawQuery, tr);
+  }
+}
+
+function buildLocalAssistantReply(state, rawQuery, tr) {
   const query = normalizeAssistantToken(rawQuery);
   const categories = getCategories(state.products);
   const intentCategories = inferAssistantCategories(query, categories);
-  const scoredProducts = state.products
-    .map((product) => ({
-      product,
-      score: scoreAssistantProduct(product, query, intentCategories),
-    }))
-    .filter((entry) => entry.score > 0)
-    .sort((a, b) => b.score - a.score || Number(b.product.inStock) - Number(a.product.inStock) || a.product.price - b.product.price)
+  const scored = state.products
+    .map((p) => ({ p, score: scoreAssistantProduct(p, query, intentCategories) }))
+    .filter((e) => e.score > 0)
+    .sort((a, b) => b.score - a.score || Number(b.p.inStock) - Number(a.p.inStock))
     .slice(0, 5)
-    .map((entry) => entry.product);
+    .map((e) => e.p);
 
-  if (!scoredProducts.length) {
-    const categoryPreview = categories.slice(0, 4).join(", ");
-    return {
-      text: `${tr("assistantNoMatch")} ${categoryPreview}.`,
-      products: [],
-    };
+  if (!scored.length) {
+    return { text: `${tr("assistantNoMatch")} ${categories.slice(0, 4).join(", ")}.`, products: [] };
   }
-
-  const broadQuery = query.split(" ").length <= 2 && !state.products.some((product) => normalizeAssistantToken(product.name).includes(query));
-  const intro = broadQuery ? tr("assistantBroadReply") : tr("assistantDirectReply");
-  return {
-    text: `${intro} ${scoredProducts.map((product) => product.name).slice(0, 3).join(", ")}.`,
-    products: scoredProducts,
-  };
+  const intro = tr("assistantDirectReply");
+  return { text: `${intro} ${scored.map((p) => p.name).slice(0, 3).join(", ")}.`, products: scored };
 }
 
 function renderAccountView(state, cartSummary, tr) {
@@ -1135,7 +1181,7 @@ function renderAccountView(state, cartSummary, tr) {
                                     .map(
                                       (reply) => `
                                         <div class="admin-reply-item">
-                                          <strong>${escapeHtml(reply.by)}</strong>
+                                          <strong>${reply.by === "Admin" ? tr("authRoleAdmin") : escapeHtml(reply.by)}</strong>
                                           <span class="muted">${new Date(reply.createdAt).toLocaleString()}</span>
                                           <p>${escapeHtml(reply.text)}</p>
                                         </div>
@@ -1339,7 +1385,7 @@ function renderAdminView(state, filteredProducts, tr) {
                                   <div class="admin-replies">
                                     ${(Array.isArray(msg.replies) ? msg.replies : []).map((reply) => `
                                       <div class="admin-reply-item">
-                                        <strong>${escapeHtml(reply.by)}</strong>
+                                        <strong>${reply.by === "Admin" ? tr("authRoleAdmin") : escapeHtml(reply.by)}</strong>
                                         <span class="muted">${new Date(reply.createdAt).toLocaleString()}</span>
                                         <p>${escapeHtml(reply.text)}</p>
                                       </div>
@@ -1622,7 +1668,7 @@ function bindEvents(currentRoute) {
       });
     }, { passive: true });
 
-    document.addEventListener("click", (event) => {
+    document.addEventListener("mousedown", (event) => {
       const languageToggle = document.querySelector("#language-toggle");
       const languageList = document.querySelector("#language-list");
       if (!languageToggle || !languageList || languageList.hidden) return;
@@ -1638,6 +1684,13 @@ function bindEvents(currentRoute) {
       topbarNotificationsOpen = false;
       render();
     }, true);
+    document.addEventListener("click", (event) => {
+      if (!assistantOpen) return;
+      const shell = document.querySelector(".assistant-shell");
+      if (!shell || shell.contains(event.target)) return;
+      assistantOpen = false;
+      render();
+    });
     hasBoundGlobalEvents = true;
   }
 
@@ -1662,27 +1715,36 @@ function bindEvents(currentRoute) {
   });
   const languageToggle = document.querySelector("#language-toggle");
   const languageList = document.querySelector("#language-list");
-  languageToggle?.addEventListener("click", () => {
+  languageToggle?.addEventListener("click", (e) => {
+    e.stopPropagation();
     if (!languageList) return;
     const isOpen = !languageList.hidden;
     languageList.hidden = isOpen;
     languageToggle.setAttribute("aria-expanded", String(!isOpen));
   });
   document.querySelectorAll(".language-menu__item").forEach((button) =>
-    button.addEventListener("click", () => {
+    button.addEventListener("mousedown", (e) => {
+      e.preventDefault(); // prevent blur before click
       setLanguage(button.dataset.language);
       if (languageList) languageList.hidden = true;
       languageToggle?.setAttribute("aria-expanded", "false");
     }),
   );
   document.querySelector("#cart-toggle")?.addEventListener("click", () => toggleCart(true));
-  document.querySelector("#assistant-toggle")?.addEventListener("click", () => {
+  document.querySelector("#assistant-toggle")?.addEventListener("click", (e) => {
+    e.stopPropagation();
     assistantOpen = !assistantOpen;
     render();
   });
-  document.querySelector("#assistant-close")?.addEventListener("click", () => {
+  document.querySelector("#assistant-close")?.addEventListener("click", (e) => {
+    e.stopPropagation();
     assistantOpen = false;
     render();
+  });
+  document.querySelector("#assistant-clear")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setAssistantMessages([]);
+    seedAssistantConversation();
   });
   document.querySelector("#assistant-input")?.addEventListener("input", (event) => {
     assistantInputState = event.target.value;
@@ -2026,7 +2088,7 @@ function bindEvents(currentRoute) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const message = String(form.get("message") || "").trim();
-    if (!message) return;
+    if (!message || assistantPending) return;
 
     assistantPending = true;
     assistantInputState = "";
@@ -2036,17 +2098,13 @@ function bindEvents(currentRoute) {
       { id: Date.now(), role: "user", text: message, products: [] },
     ];
     setAssistantMessages(nextMessages);
+    render();
 
-    const reply = buildAssistantReply(getState(), message, (key) => t(getState().language, key));
+    const reply = await buildAssistantReply(getState(), message, (key) => t(getState().language, key));
     assistantPending = false;
     setAssistantMessages([
       ...nextMessages,
-      {
-        id: Date.now() + 1,
-        role: "assistant",
-        text: reply.text,
-        products: reply.products,
-      },
+      { id: Date.now() + 1, role: "assistant", text: reply.text, products: reply.products },
     ]);
   });
 
@@ -2260,7 +2318,7 @@ function getCustomerNotifications(state, tr) {
     .map((entry) => ({
       ...entry,
       kindLabel:
-        entry.kindLabel ||
+        tr(entry.kindLabel) ||
         (String(entry.kind || "").startsWith("message")
           ? tr("customerNotificationTypeMessage")
           : tr("customerNotificationTypeProduct")),
@@ -2268,6 +2326,37 @@ function getCustomerNotifications(state, tr) {
     }))
     .filter((entry) => entry.createdAt)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+function formatNotificationText(note, tr) {
+  if (note.kind === "message") return note.text;
+  
+  const text = note.text; // usually product name
+  const meta = note.meta || "";
+  
+  if (meta.startsWith("notificationNowAvailableAt|")) {
+    const price = meta.split("|")[1];
+    return `${text} ${tr("notificationNowAvailableAt")} ${formatPrice(Number(price))}.`;
+  }
+  if (meta.startsWith("notificationNowCosts|")) {
+    const price = meta.split("|")[1];
+    return `${text} ${tr("notificationNowCosts")} ${formatPrice(Number(price))}.`;
+  }
+  if (meta.startsWith("priceChange|")) {
+    const [, oldP, newP] = meta.split("|");
+    return `${text}: ${formatPrice(Number(oldP))} -> ${formatPrice(Number(newP))}`;
+  }
+  if (meta === "notificationIsNoLongerAvailable") {
+    return `${text} ${tr("notificationIsNoLongerAvailable")}`;
+  }
+  if (meta === "notificationBackInStock" || meta === "notificationOutOfStock") {
+    return `${text} ${tr(meta)}.`;
+  }
+  if (meta === "notificationWasUpdated") {
+    return `${text} ${tr("notificationWasUpdated")}`;
+  }
+  
+  return text;
 }
 
 function renderCustomerNotificationSections(notifications, tr) {
@@ -2309,7 +2398,9 @@ function renderCustomerNotificationSections(notifications, tr) {
                 const isNew = String(note.kind || "").includes("new");
                 const hash = isMessage ? "/account" : (note.targetHash || "/account");
                 const target = isMessage ? "customer-chatbox" : (note.targetId || "");
-                const timeAgo = getTimeAgo(note.createdAt);
+                const timeAgo = getTimeAgo(note.createdAt, tr);
+                const translatedTitle = tr(note.title);
+                const translatedText = formatNotificationText(note, tr);
                 return `
                   <button class="account-notification-item" type="button"
                     data-notification-hash="${escapeHtml(hash)}"
@@ -2320,9 +2411,9 @@ function renderCustomerNotificationSections(notifications, tr) {
                       <span class="notification-time">${timeAgo}</span>
                     </div>
                     <div class="notification-content">
-                      <strong class="notification-title">${escapeHtml(note.title)}</strong>
-                      <p class="notification-text">${escapeHtml(note.text)}</p>
-                      ${note.meta ? `<span class="notification-meta">${escapeHtml(note.meta)}</span>` : ""}
+                      <strong class="notification-title">${escapeHtml(translatedTitle)}</strong>
+                      <p class="notification-text">${escapeHtml(translatedText)}</p>
+                      ${note.kind === "message" && note.meta ? `<span class="notification-meta">${escapeHtml(note.meta)}</span>` : ""}
                     </div>
                     <div class="notification-action">
                       <span class="notification-action-text">${escapeHtml(isMessage ? tr("customerChatboxTitle") : isPrice ? tr("customerNotificationPriceTitle") : isNew ? tr("customerNotificationNewProductTitle") : tr("customerNotificationOpenAction"))}</span>
@@ -2875,7 +2966,7 @@ function mountAdminOrdersMap(filterEmail) {
   }
 }
 
-function getTimeAgo(dateString) {
+function getTimeAgo(dateString, tr) {
   if (!dateString) return "";
   const now = new Date();
   const date = new Date(dateString);
@@ -2884,10 +2975,10 @@ function getTimeAgo(dateString) {
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
   
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffMins < 1) return tr("timeJustNow");
+  if (diffMins < 60) return `${diffMins}${tr("timeMinuteAgo")}`;
+  if (diffHours < 24) return `${diffHours}${tr("timeHourAgo")}`;
+  if (diffDays < 7) return `${diffDays}${tr("timeDayAgo")}`;
   return date.toLocaleDateString();
 }
 

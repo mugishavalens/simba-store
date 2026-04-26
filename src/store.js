@@ -12,6 +12,7 @@ import {
 } from "./backend.js";
 import { DEFAULT_FILTERS, STORAGE_KEYS } from "./constants.js";
 import { formatPrice } from "./utils.js";
+import { t } from "./i18n.js";
 
 const listeners = new Set();
 
@@ -31,7 +32,14 @@ const state = {
   orders: session.orders,
   messages: session.messages,
   customerNotificationFeed: readStorage(STORAGE_KEYS.customerNotificationFeed, []),
-  assistantMessages: readStorage(STORAGE_KEYS.assistantMessages, []),
+  assistantMessages: readStorage(STORAGE_KEYS.assistantMessages, [
+    {
+      id: "seed",
+      role: "assistant",
+      text: t(session.language || "en", "assistantWelcome"),
+      products: [],
+    },
+  ]),
   cartOpen: false,
   orderComplete: false,
   authFeedback: null,
@@ -62,7 +70,7 @@ function createCustomerNotificationEvent(payload) {
     title: String(payload.title || "").trim(),
     text: String(payload.text || "").trim(),
     kind: String(payload.kind || "general").trim(),
-    kindLabel: String(payload.kindLabel || "Update").trim(),
+    kindLabel: String(payload.kindLabel || "customerNotificationGeneralType").trim(),
     actionLabel: String(payload.actionLabel || "").trim(),
     targetHash: String(payload.targetHash || "/account").trim(),
     targetId: String(payload.targetId || "").trim(),
@@ -91,14 +99,14 @@ function recordRemovedProductNotifications(previousProducts, currentProducts) {
     appendCustomerNotification({
       email: "*",
       createdAt: new Date().toISOString(),
-      title: "Product removed",
-      text: `${String(product.name || "Product").trim()} is no longer available in the catalog.`,
+      title: "notificationProductRemoved",
+      text: String(product.name || "Product").trim(),
+      meta: "notificationIsNoLongerAvailable",
       kind: "product-removed",
-      kindLabel: "Product",
+      kindLabel: "customerNotificationTypeProduct",
       actionLabel: "Open catalog",
       targetHash: "/",
       targetId: "catalog",
-      meta: String(product.category || "").trim(),
     });
   }
 }
@@ -111,13 +119,13 @@ function seedLegacyNotificationFeed() {
       appendCustomerNotification({
         email: "*",
         createdAt: product.createdAt,
-        title: "New product added",
-        text: `${String(product.name || "Product").trim()} is now available at ${formatPrice(Number(product.price || 0))}.`,
+        title: "notificationProductAdded",
+        text: String(product.name || "Product").trim(),
+        meta: `notificationNowAvailableAt|${product.price}`,
         kind: "product-new",
-        kindLabel: "Product",
+        kindLabel: "customerNotificationTypeProduct",
         actionLabel: "View product",
         targetHash: `/product/${product.id}`,
-        meta: String(product.category || "").trim(),
       });
     }
 
@@ -127,15 +135,15 @@ function seedLegacyNotificationFeed() {
       appendCustomerNotification({
         email: "*",
         createdAt: product.priceChangedAt || product.updatedAt,
-        title: "Price updated",
-        text: Number.isFinite(previousPrice)
-          ? `${String(product.name || "Product").trim()}: ${formatPrice(previousPrice)} -> ${formatPrice(currentPrice)}`
-          : `${String(product.name || "Product").trim()} now costs ${formatPrice(currentPrice)}.`,
+        title: "notificationPriceUpdated",
+        text: String(product.name || "Product").trim(),
+        meta: Number.isFinite(previousPrice)
+          ? `priceChange|${previousPrice}|${currentPrice}`
+          : `notificationNowCosts|${currentPrice}`,
         kind: "product-price",
-        kindLabel: "Product",
+        kindLabel: "customerNotificationTypeProduct",
         actionLabel: "View product",
         targetHash: `/product/${product.id}`,
-        meta: String(product.category || "").trim(),
       });
     }
   }
@@ -146,10 +154,10 @@ function seedLegacyNotificationFeed() {
       appendCustomerNotification({
         email: message.email,
         createdAt: reply.createdAt,
-        title: "New admin message",
+        title: "notificationMessageNew",
         text: reply.text,
         kind: "message",
-        kindLabel: "Message",
+        kindLabel: "customerNotificationTypeMessage",
         actionLabel: "View reply",
         targetHash: "/account",
         targetId: "customer-chatbox",
@@ -207,6 +215,19 @@ export function setTheme(theme) {
 export function setLanguage(language) {
   state.language = language;
   persist(STORAGE_KEYS.language, language);
+
+  // Update assistant welcome message if it exists
+  if (Array.isArray(state.assistantMessages)) {
+    const seedIndex = state.assistantMessages.findIndex((m) => m.id === "seed");
+    if (seedIndex !== -1) {
+      state.assistantMessages[seedIndex] = {
+        ...state.assistantMessages[seedIndex],
+        text: t(language, "assistantWelcome"),
+      };
+      persist(STORAGE_KEYS.assistantMessages, state.assistantMessages);
+    }
+  }
+
   emit();
 }
 
@@ -358,10 +379,10 @@ export async function sendSupportReply(payload) {
       appendCustomerNotification({
         email: originalMessage.email,
         createdAt: result.reply.createdAt,
-        title: "New admin message",
+        title: "notificationMessageNew",
         text: result.reply.text,
         kind: "message",
-        kindLabel: "Message",
+        kindLabel: "customerNotificationTypeMessage",
         actionLabel: "View reply",
         targetHash: "/account",
         targetId: "customer-chatbox",
@@ -516,17 +537,17 @@ export function saveProduct(payload) {
     appendCustomerNotification({
       email: "*",
       createdAt: changedAt,
-      title: priceChanged ? "Price updated" : "Product updated",
-      text: priceChanged
-        ? `${existingProduct.name}: ${formatPrice(currentPrice)} -> ${formatPrice(nextPrice)}`
+      title: priceChanged ? "notificationPriceUpdated" : "notificationProductUpdated",
+      text: existingProduct.name,
+      meta: priceChanged
+        ? `priceChange|${currentPrice}|${nextPrice}`
         : previousStock !== nextStock
-          ? `${existingProduct.name} is ${nextStock ? "back in stock" : "out of stock"}.`
-          : `${existingProduct.name} information was updated.`,
+          ? (nextStock ? "notificationBackInStock" : "notificationOutOfStock")
+          : "notificationWasUpdated",
       kind: priceChanged ? "product-price" : "product-update",
-      kindLabel: "Product",
+      kindLabel: "customerNotificationTypeProduct",
       actionLabel: "View product",
       targetHash: `/product/${existingProduct.id}`,
-      meta: String(existingProduct.category || "").trim(),
     });
     state.adminFeedback = { type: "success", code: "priceUpdated" };
   } else {
@@ -554,13 +575,13 @@ export function saveProduct(payload) {
     appendCustomerNotification({
       email: "*",
       createdAt,
-      title: "New product added",
-      text: `${newProduct.name} is now available at ${formatPrice(nextPrice)}.`,
+      title: "notificationProductAdded",
+      text: newProduct.name,
+      meta: `notificationNowAvailableAt|${nextPrice}`,
       kind: "product-new",
-      kindLabel: "Product",
+      kindLabel: "customerNotificationTypeProduct",
       actionLabel: "View product",
       targetHash: `/product/${newProduct.id}`,
-      meta: String(newProduct.category || "").trim(),
     });
     state.adminFeedback = { type: "success", code: "productAdded" };
   }
