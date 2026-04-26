@@ -58,6 +58,7 @@ let locationStatusState = "";     // ""|"locating"|"denied"|"error"
 let branchMapInitialized = false;
 let discoverPanelHidden = false;
 let adminOpenCustomerEmail = ""; // tracks which customer chat is open in admin
+let navOpen = false;
 
 window.addEventListener("hashchange", render);
 subscribe(() => render());
@@ -153,7 +154,10 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
             <span>Online Shop</span>
           </div>
         </a>
-        <nav class="main-nav" aria-label="Primary">
+        <button class="nav-hamburger" id="nav-hamburger" type="button" aria-label="Menu" aria-expanded="${navOpen}">
+          <span></span><span></span><span></span>
+        </button>
+        <nav class="main-nav ${navOpen ? "main-nav--open" : ""}" id="main-nav" aria-label="Primary">
           <a class="main-nav__link" href="#/" data-home-link="true">${tr("navHome")}</a>
           ${
             isAdmin
@@ -1380,6 +1384,13 @@ function bindEvents(currentRoute) {
     }),
   );
   document.querySelector("#cart-toggle")?.addEventListener("click", () => toggleCart(true));
+  document.querySelector("#nav-hamburger")?.addEventListener("click", () => {
+    navOpen = !navOpen;
+    render();
+  });
+  document.querySelectorAll(".main-nav__link").forEach((link) =>
+    link.addEventListener("click", () => { navOpen = false; })
+  );
   document.querySelectorAll("[data-home-link='true']").forEach((link) =>
     link.addEventListener("click", (event) => {
       event.preventDefault();
