@@ -737,7 +737,8 @@ function renderCheckoutView(state, cartSummary, tr) {
 function renderAssistantWidget(state, tr, currentRoute) {
   if (currentRoute.name === "admin") return "";
 
-  const messages = Array.isArray(state.assistantMessages) ? state.assistantMessages : [];
+  const isLoggedIn = state.isAuthenticated && state.currentUser?.role === "customer";
+  const messages = isLoggedIn && Array.isArray(state.assistantMessages) ? state.assistantMessages : [];
   const visibleMessages = messages.slice(-8);
 
   return `
@@ -752,51 +753,41 @@ function renderAssistantWidget(state, tr, currentRoute) {
                   <p>${tr("assistantLead")}</p>
                 </div>
                 <div style="display:flex;gap:0.4rem;align-items:center">
-                  <button class="button button--ghost button--sm" id="assistant-clear" type="button">🗑</button>
+                  ${isLoggedIn ? `<button class="button button--ghost button--sm" id="assistant-clear" type="button">🗑</button>` : ""}
                   <button class="button button--ghost button--sm" id="assistant-close" type="button">${tr("close")}</button>
                 </div>
               </div>
               <div class="assistant-panel__messages">
-                ${visibleMessages
-                  .map(
-                    (message) => `
-                      <article class="assistant-bubble assistant-bubble--${escapeHtml(message.role || "assistant")}">
-                        <strong>${message.role === "user" ? tr("assistantYou") : tr("assistantTitle")}</strong>
-                        <p>${escapeHtml(message.text || "")}</p>
-                        ${
-                          Array.isArray(message.products) && message.products.length
-                            ? `
-                              <div class="assistant-products">
-                                ${message.products
-                                  .map(
-                                    (product) => `
-                                      <button class="assistant-product" type="button" data-assistant-product-id="${product.id}">
-                                        <span>${escapeHtml(product.name)}</span>
-                                        <strong>${formatPrice(product.price)}</strong>
-                                      </button>
-                                    `,
-                                  )
-                                  .join("")}
-                              </div>
-                            `
-                            : ""
-                        }
-                      </article>
-                    `,
-                  )
-                  .join("")}
+                ${
+                  isLoggedIn
+                    ? visibleMessages.map((message) => `
+                        <article class="assistant-bubble assistant-bubble--${escapeHtml(message.role || "assistant")}">
+                          <strong>${message.role === "user" ? tr("assistantYou") : tr("assistantTitle")}</strong>
+                          <p>${escapeHtml(message.text || "")}</p>
+                          ${
+                            Array.isArray(message.products) && message.products.length
+                              ? `<div class="assistant-products">${message.products.map((product) => `
+                                  <button class="assistant-product" type="button" data-assistant-product-id="${product.id}">
+                                    <span>${escapeHtml(product.name)}</span>
+                                    <strong>${formatPrice(product.price)}</strong>
+                                  </button>`).join("")}</div>`
+                              : ""
+                          }
+                        </article>`).join("")
+                    : `<div class="assistant-signin-prompt">
+                        <p>&#128274; ${tr("navSignIn")} to use the shop assistant.</p>
+                        <a class="button button--primary button--sm" href="#/auth/signin">${tr("navSignIn")}</a>
+                      </div>`
+                }
               </div>
-              <form id="assistant-form" class="assistant-form">
-                <input
-                  id="assistant-input"
-                  name="message"
-                  value="${escapeHtml(assistantInputState)}"
-                  placeholder="${tr("assistantPlaceholder")}"
-                  autocomplete="off"
-                  required
-                />
-                <button class="button button--accent" type="submit">${assistantPending ? tr("assistantThinking") : tr("assistantSend")}</button>
-              </form>
+              ${
+                isLoggedIn
+                  ? `<form id="assistant-form" class="assistant-form">
+                      <input id="assistant-input" name="message" value="${escapeHtml(assistantInputState)}" placeholder="${tr("assistantPlaceholder")}" autocomplete="off" required />
+                      <button class="button button--accent" type="submit">${assistantPending ? tr("assistantThinking") : tr("assistantSend")}</button>
+                    </form>`
+                  : ""
+              }
             </section>
           `
           : ""
@@ -1821,12 +1812,16 @@ function bindEvents(currentRoute) {
   );
   document.querySelector("#signout-toggle")?.addEventListener("click", () => {
     signOut();
+    setAssistantMessages([]);
+    assistantOpen = false;
     adminCustomersNotificationsOpen = false;
     adminProductsNotificationsOpen = false;
     location.hash = "/";
   });
   document.querySelector("#account-signout")?.addEventListener("click", () => {
     signOut();
+    setAssistantMessages([]);
+    assistantOpen = false;
     customerNotificationsOpen = false;
     topbarNotificationsOpen = false;
     adminCustomersNotificationsOpen = false;
