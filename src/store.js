@@ -7,6 +7,7 @@ import {
   registerUser,
   resetUserPassword,
   submitSupportMessage,
+  updateUserLocation,
   updateUserProfile,
 } from "./backend.js";
 import { DEFAULT_FILTERS, STORAGE_KEYS } from "./constants.js";
@@ -30,6 +31,7 @@ const state = {
   orders: session.orders,
   messages: session.messages,
   customerNotificationFeed: readStorage(STORAGE_KEYS.customerNotificationFeed, []),
+  assistantMessages: readStorage(STORAGE_KEYS.assistantMessages, []),
   cartOpen: false,
   orderComplete: false,
   authFeedback: null,
@@ -314,6 +316,18 @@ export async function updateAccountProfile(payload) {
   return true;
 }
 
+export async function syncAccountLocation(payload) {
+  const result = await updateUserLocation(payload);
+  if (!result.ok) {
+    return false;
+  }
+
+  state.users = result.users;
+  state.currentUser = result.user;
+  emit();
+  return true;
+}
+
 export async function sendSupportMessage(payload) {
   const result = await submitSupportMessage(payload);
   state.contactFeedback = { type: result.ok ? "success" : "error", code: result.code };
@@ -403,11 +417,34 @@ export function clearCart() {
   emit();
 }
 
+export function setAssistantMessages(messages) {
+  state.assistantMessages = Array.isArray(messages) ? messages : [];
+  persist(STORAGE_KEYS.assistantMessages, state.assistantMessages);
+  emit();
+}
+
 export async function completeOrder(payload) {
   if (!state.cart.length) {
     state.checkoutFeedback = { type: "error", code: "emptyCart" };
     emit();
     return false;
+  }
+
+  const paymentMethod = String(payload.paymentMethod || "");
+  if (paymentMethod === "momo" && !String(payload.momoNumber || "").trim()) {
+    state.checkoutFeedback = { type: "error", code: "momoNumberRequired" };
+    emit();
+    return false;
+  }
+
+  if (paymentMethod === "card") {
+    const cardNumber = String(payload.cardNumber || "").replace(/\D/g, "");
+    const cardholderName = String(payload.cardholderName || "").trim();
+    if (cardNumber.length < 12 || !cardholderName) {
+      state.checkoutFeedback = { type: "error", code: "cardDetailsRequired" };
+      emit();
+      return false;
+    }
   }
 
   const result = await createOrder(payload);
@@ -418,6 +455,25 @@ export async function completeOrder(payload) {
   }
 
   state.orders = result.orders;
+  if (Array.isArray(result.users)) {
+    state.users = result.users;
+    const currentUserEmail = String(state.currentUser?.email || "").toLowerCase();
+    if (currentUserEmail) {
+      const refreshedUser = result.users.find((entry) => String(entry.email || "").toLowerCase() === currentUserEmail);
+      if (refreshedUser) {
+        state.currentUser = {
+          id: refreshedUser.id,
+          fullName: refreshedUser.fullName,
+          email: refreshedUser.email,
+          role: refreshedUser.role,
+          avatarUrl: refreshedUser.avatarUrl || "",
+          lastKnownLocation: refreshedUser.lastKnownLocation || null,
+          lastNearestBranch: refreshedUser.lastNearestBranch || null,
+        };
+        persist(STORAGE_KEYS.currentUser, state.currentUser);
+      }
+    }
+  }
   state.lastOrder = result.order;
   state.orderComplete = true;
   state.cart = [];

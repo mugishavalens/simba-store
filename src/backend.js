@@ -1,5 +1,9 @@
 import { DEFAULT_ADMIN, GOOGLE_CLIENT_ID, STORAGE_KEYS } from "./constants.js";
 
+function resolveGoogleClientId() {
+  return String(localStorage.getItem("simba.google-client-id") || GOOGLE_CLIENT_ID || "").trim();
+}
+
 function readStorage(key, fallback) {
   try {
     const value = localStorage.getItem(key);
@@ -40,6 +44,9 @@ function publicUser(user) {
     fullName: user.fullName,
     email: user.email,
     role: user.role,
+    avatarUrl: user.avatarUrl || "",
+    lastKnownLocation: user.lastKnownLocation || null,
+    lastNearestBranch: user.lastNearestBranch || null,
   };
 }
 
@@ -71,7 +78,7 @@ function verifyGoogleToken(idToken, expectedNonce) {
     return { ok: false, code: "googleTokenInvalid" };
   }
 
-  if (payload.aud !== GOOGLE_CLIENT_ID) {
+  if (payload.aud !== resolveGoogleClientId()) {
     return { ok: false, code: "googleTokenInvalid" };
   }
 
@@ -199,7 +206,8 @@ export async function resetUserPassword(payload) {
 
 export async function loginWithGoogleUser(payload = {}) {
   const users = ensureDefaultAdmin(readStorage(STORAGE_KEYS.users, [])).users;
-  if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.includes("YOUR_GOOGLE_CLIENT_ID")) {
+  const googleClientId = resolveGoogleClientId();
+  if (!googleClientId || googleClientId.includes("YOUR_GOOGLE_CLIENT_ID")) {
     return { ok: false, code: "googleSetupRequired" };
   }
 
@@ -324,6 +332,8 @@ export async function updateUserProfile(payload) {
     ...users[index],
     fullName: String(payload.fullName).trim(),
     password: payload.password ? String(payload.password) : users[index].password,
+    lastKnownLocation: payload.lastKnownLocation ?? users[index].lastKnownLocation ?? null,
+    lastNearestBranch: payload.lastNearestBranch ?? users[index].lastNearestBranch ?? null,
     updatedAt: new Date().toISOString(),
   };
 
@@ -339,21 +349,63 @@ export async function updateUserProfile(payload) {
   };
 }
 
+export async function updateUserLocation(payload) {
+  const users = ensureDefaultAdmin(readStorage(STORAGE_KEYS.users, [])).users;
+  const email = String(payload.email).trim().toLowerCase();
+  const index = users.findIndex((entry) => entry.email === email);
+
+  if (index === -1) {
+    return { ok: false, code: "missing" };
+  }
+
+  users[index] = {
+    ...users[index],
+    lastKnownLocation: payload.lastKnownLocation || null,
+    lastNearestBranch: payload.lastNearestBranch || null,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const nextPublicUser = publicUser(users[index]);
+  writeStorage(STORAGE_KEYS.users, users);
+  writeStorage(STORAGE_KEYS.currentUser, nextPublicUser);
+
+  return {
+    ok: true,
+    code: "locationUpdated",
+    user: nextPublicUser,
+    users,
+  };
+}
+
 export async function createOrder(payload) {
   const orders = readStorage(STORAGE_KEYS.orders, []);
+  let nextUsers = null;
   const paymentMethod = payload.paymentMethod;
+  const normalizedMethod = ["momo", "card", "cash"].includes(paymentMethod) ? paymentMethod : "cash";
   const paymentStatusMap = {
-    momo: "momo_confirmed",
+    momo: "awaiting_momo_confirmation",
     card: "card_authorized",
-    cash: "cash_on_delivery",
+    cash: "pay_on_delivery",
+  };
+  const paymentNotesMap = {
+    momo: `Awaiting MoMo confirmation on ${String(payload.momoNumber || "").trim() || "the provided number"}.`,
+    card: `Card authorization simulated for ${String(payload.cardholderName || "customer").trim()}.`,
+    cash: "Customer will pay in cash on delivery.",
   };
 
   const order = {
     id: Date.now(),
     reference: createReference("SIMBA"),
-    paymentReference: createReference(paymentMethod.toUpperCase()),
-    paymentMethod,
-    paymentStatus: paymentStatusMap[paymentMethod] || "pending",
+    paymentReference: createReference(normalizedMethod.toUpperCase()),
+    paymentMethod: normalizedMethod,
+    paymentStatus: paymentStatusMap[normalizedMethod] || "pending",
+    paymentTimeline: [
+      {
+        label: "created",
+        at: new Date().toISOString(),
+        note: paymentNotesMap[normalizedMethod] || "Payment request created.",
+      },
+    ],
     customer: {
       fullName: String(payload.fullName).trim(),
       email: String(payload.customerEmail || "").trim().toLowerCase(),
@@ -365,6 +417,12 @@ export async function createOrder(payload) {
       location: payload.customerLocation || null,
       nearestBranch: payload.nearestBranch || null,
     },
+    paymentMeta: {
+      momoNumber: String(payload.momoNumber || "").trim(),
+      cardholderName: String(payload.cardholderName || "").trim(),
+      cardLast4: String(payload.cardNumber || "").replace(/\D/g, "").slice(-4),
+      instructions: paymentNotesMap[normalizedMethod] || "",
+    },
     items: payload.items,
     totals: payload.totals,
     createdAt: new Date().toISOString(),
@@ -373,10 +431,28 @@ export async function createOrder(payload) {
   orders.unshift(order);
   writeStorage(STORAGE_KEYS.orders, orders);
 
+  const customerEmail = String(payload.customerEmail || "").trim().toLowerCase();
+  if (customerEmail) {
+    const users = ensureDefaultAdmin(readStorage(STORAGE_KEYS.users, [])).users;
+    const userIndex = users.findIndex((entry) => String(entry.email || "").toLowerCase() === customerEmail);
+    if (userIndex >= 0) {
+      users[userIndex] = {
+        ...users[userIndex],
+        lastKnownLocation: payload.customerLocation || users[userIndex].lastKnownLocation || null,
+        lastNearestBranch: payload.nearestBranch || users[userIndex].lastNearestBranch || null,
+        lastOrderAt: order.createdAt,
+        updatedAt: order.createdAt,
+      };
+      writeStorage(STORAGE_KEYS.users, users);
+      nextUsers = users;
+    }
+  }
+
   return {
     ok: true,
     code: "placed",
     order,
     orders,
+    users: nextUsers,
   };
 }

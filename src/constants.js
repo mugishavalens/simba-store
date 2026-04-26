@@ -9,10 +9,12 @@ export const STORAGE_KEYS = {
   messages: "simba.messages.v2",
   products: "simba.products.v2",
   googleNonce: "simba.google-nonce.v1",
+  googleState: "simba.google-state.v1",
   customerNotificationSeenAt: "simba.customer-notification-seen-at.v1",
   adminNotificationSeenAt: "simba.admin-notification-seen-at.v1",
   customerNotificationFeed: "simba.customer-notification-feed.v1",
   productSnapshot: "simba.product-snapshot.v1",
+  assistantMessages: "simba.assistant-messages.v1",
 };
 
 export const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";

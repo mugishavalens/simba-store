@@ -1,4 +1,12 @@
-import { CATEGORY_BACKGROUNDS, GOOGLE_CLIENT_ID, LANGUAGES, PAYMENT_METHODS, SIMBA_BRANCHES, STORAGE_KEYS } from "./constants.js";
+import {
+  CATEGORY_BACKGROUNDS,
+  GOOGLE_CLIENT_ID,
+  LANGUAGES,
+  PAYMENT_METHODS,
+  SHOPPING_ASSISTANT_PROMPT,
+  SIMBA_BRANCHES,
+  STORAGE_KEYS,
+} from "./constants.js";
 import { loadCatalog } from "./data.js";
 import { t } from "./i18n.js";
 import {
@@ -26,6 +34,8 @@ import {
   setTheme,
   signOut,
   subscribe,
+  syncAccountLocation,
+  setAssistantMessages,
   toggleCart,
   updateAccountProfile,
   updateQuantity,
@@ -59,6 +69,10 @@ let branchMapInitialized = false;
 let discoverPanelHidden = false;
 let adminOpenCustomerEmail = ""; // tracks which customer chat is open in admin
 let navOpen = false;
+let assistantOpen = false;
+let assistantInputState = "";
+let assistantPending = false;
+let checkoutPaymentMethodState = "momo";
 
 window.addEventListener("hashchange", render);
 subscribe(() => render());
@@ -68,6 +82,12 @@ boot();
 async function boot() {
   const payload = await loadCatalog();
   initializeStore(payload);
+  const state = getState();
+  if (state.currentUser?.lastKnownLocation) {
+    customerLocationState = state.currentUser.lastKnownLocation;
+    nearestBranchState = state.currentUser.lastNearestBranch || findNearestBranch(customerLocationState.lat, customerLocationState.lng);
+  }
+  seedAssistantConversation();
   await handleGoogleAuthCallback();
 }
 
@@ -108,6 +128,7 @@ function render() {
   app.innerHTML = `
     ${renderTopbar(state, cartSummary, categories, tr, currentRoute)}
     ${view}
+    ${renderAssistantWidget(state, tr, currentRoute)}
     ${state.cartOpen ? `<div class="cart-overlay" id="cart-overlay"></div>` : ""}
     ${state.cartOpen ? renderCart(state, cartSummary, tr) : ""}
   `;
@@ -585,19 +606,48 @@ function renderProductView(state, productId, cartSummary, tr) {
 }
 
 function renderCheckoutView(state, cartSummary, tr) {
+  const checkoutFeedback = state.checkoutFeedback
+    ? `<p class="auth-feedback auth-feedback--${state.checkoutFeedback.type}">${tr(`checkout_${state.checkoutFeedback.code}`)}</p>`
+    : "";
+  const selectedPaymentMethod = checkoutPaymentMethodState || PAYMENT_METHODS[0];
+  const paymentGuide = getCheckoutPaymentGuide(selectedPaymentMethod, tr);
+  const lastOrder = state.lastOrder;
   return `
     <main class="checkout-layout">
       <section class="checkout-card">
         <h2>${tr("checkoutTitle")}</h2>
         <p class="section__lead">${tr("checkoutLead")}</p>
+        ${checkoutFeedback}
         ${
           state.orderComplete
-            ? `<div class="banner"><h3>${tr("orderPlaced")}</h3><p>${tr("orderPlacedText")}</p><a class="button button--primary" href="#/">${tr("continueShopping")}</a></div>`
+            ? `
+              <div class="banner">
+                <h3>${tr("orderPlaced")}</h3>
+                <p>${tr("orderPlacedText")}</p>
+                ${
+                  lastOrder
+                    ? `
+                      <div class="checkout-success-meta">
+                        <div><strong>${escapeHtml(lastOrder.reference)}</strong></div>
+                        <div class="muted">${escapeHtml(formatPaymentMethodLabel(lastOrder.paymentMethod, tr))} • ${escapeHtml(formatPaymentStatus(lastOrder.paymentStatus, tr))}</div>
+                        <div class="muted">${escapeHtml(lastOrder.paymentReference || "")}</div>
+                        ${
+                          lastOrder.paymentMeta?.instructions
+                            ? `<p class="muted">${escapeHtml(lastOrder.paymentMeta.instructions)}</p>`
+                            : ""
+                        }
+                      </div>
+                    `
+                    : ""
+                }
+                <a class="button button--primary" href="#/">${tr("continueShopping")}</a>
+              </div>
+            `
             : `<form id="checkout-form">
                 <div class="checkout-grid">
                   <label class="checkout-field">
                     <span>${tr("fullName")}</span>
-                    <input name="fullName" required />
+                    <input name="fullName" value="${escapeHtml(state.currentUser?.fullName || "")}" required />
                   </label>
                   <label class="checkout-field">
                     <span>${tr("phone")}</span>
@@ -618,7 +668,7 @@ function renderCheckoutView(state, cartSummary, tr) {
                           card: tr("paymentCard"),
                           cash: tr("paymentCash"),
                         };
-                        return `<option value="${method}">${labelMap[method]}</option>`;
+                        return `<option value="${method}" ${selectedPaymentMethod === method ? "selected" : ""}>${labelMap[method]}</option>`;
                       }).join("")}
                     </select>
                   </label>
@@ -627,6 +677,20 @@ function renderCheckoutView(state, cartSummary, tr) {
                   <span>${tr("momoNumber")}</span>
                   <input name="momoNumber" placeholder="07XXXXXXXX" />
                 </label>
+                <div class="checkout-grid" id="card-fields">
+                  <label class="checkout-field">
+                    <span>${tr("cardholderName")}</span>
+                    <input name="cardholderName" placeholder="John Simba" />
+                  </label>
+                  <label class="checkout-field">
+                    <span>${tr("cardNumber")}</span>
+                    <input name="cardNumber" inputmode="numeric" placeholder="4242 4242 4242 4242" />
+                  </label>
+                </div>
+                <div class="payment-method-panel">
+                  <strong>${escapeHtml(paymentGuide.title)}</strong>
+                  <p>${escapeHtml(paymentGuide.description)}</p>
+                </div>
                 <label class="checkout-field">
                   <span>${tr("address")}</span>
                   <textarea name="address" required></textarea>
@@ -668,6 +732,222 @@ function renderCheckoutView(state, cartSummary, tr) {
       </aside>
     </main>
   `;
+}
+
+function renderAssistantWidget(state, tr, currentRoute) {
+  if (currentRoute.name === "admin") return "";
+
+  const messages = Array.isArray(state.assistantMessages) ? state.assistantMessages : [];
+  const visibleMessages = messages.slice(-8);
+
+  return `
+    <div class="assistant-shell ${assistantOpen ? "assistant-shell--open" : ""}">
+      ${
+        assistantOpen
+          ? `
+            <section class="assistant-panel" aria-label="${tr("assistantTitle")}">
+              <div class="assistant-panel__head">
+                <div>
+                  <strong>${tr("assistantTitle")}</strong>
+                  <p>${tr("assistantLead")}</p>
+                </div>
+                <button class="button button--ghost button--sm" id="assistant-close" type="button">${tr("close")}</button>
+              </div>
+              <div class="assistant-panel__messages">
+                ${visibleMessages
+                  .map(
+                    (message) => `
+                      <article class="assistant-bubble assistant-bubble--${escapeHtml(message.role || "assistant")}">
+                        <strong>${message.role === "user" ? tr("assistantYou") : tr("assistantTitle")}</strong>
+                        <p>${escapeHtml(message.text || "")}</p>
+                        ${
+                          Array.isArray(message.products) && message.products.length
+                            ? `
+                              <div class="assistant-products">
+                                ${message.products
+                                  .map(
+                                    (product) => `
+                                      <button class="assistant-product" type="button" data-assistant-product-id="${product.id}">
+                                        <span>${escapeHtml(product.name)}</span>
+                                        <strong>${formatPrice(product.price)}</strong>
+                                      </button>
+                                    `,
+                                  )
+                                  .join("")}
+                              </div>
+                            `
+                            : ""
+                        }
+                      </article>
+                    `,
+                  )
+                  .join("")}
+              </div>
+              <form id="assistant-form" class="assistant-form">
+                <input
+                  id="assistant-input"
+                  name="message"
+                  value="${escapeHtml(assistantInputState)}"
+                  placeholder="${tr("assistantPlaceholder")}"
+                  autocomplete="off"
+                  required
+                />
+                <button class="button button--accent" type="submit">${assistantPending ? tr("assistantThinking") : tr("assistantSend")}</button>
+              </form>
+            </section>
+          `
+          : ""
+      }
+      <button class="assistant-launcher" id="assistant-toggle" type="button">
+        <span>${tr("assistantTitle")}</span>
+      </button>
+    </div>
+  `;
+}
+
+function formatPaymentMethodLabel(paymentMethod, tr) {
+  const map = {
+    momo: tr("paymentMomo"),
+    card: tr("paymentCard"),
+    cash: tr("paymentCash"),
+  };
+  return map[paymentMethod] || paymentMethod || "Payment";
+}
+
+function formatPaymentStatus(paymentStatus, tr) {
+  const map = {
+    awaiting_momo_confirmation: tr("paymentStatusMomoPending"),
+    card_authorized: tr("paymentStatusCardAuthorized"),
+    pay_on_delivery: tr("paymentStatusCash"),
+    pending: tr("paymentStatusPending"),
+  };
+  return map[paymentStatus] || paymentStatus || tr("paymentStatusPending");
+}
+
+function getCheckoutPaymentGuide(paymentMethod, tr) {
+  if (paymentMethod === "card") {
+    return {
+      title: tr("paymentCardGuideTitle"),
+      description: tr("paymentCardGuideText"),
+    };
+  }
+  if (paymentMethod === "cash") {
+    return {
+      title: tr("paymentCashGuideTitle"),
+      description: tr("paymentCashGuideText"),
+    };
+  }
+  return {
+    title: tr("paymentMomoGuideTitle"),
+    description: tr("paymentMomoGuideText"),
+  };
+}
+
+function seedAssistantConversation() {
+  const state = getState();
+  if (Array.isArray(state.assistantMessages) && state.assistantMessages.length) return;
+
+  setAssistantMessages([
+    {
+      id: Date.now(),
+      role: "assistant",
+      text: SHOPPING_ASSISTANT_PROMPT.includes("quickly")
+        ? "Ask me for products, categories, budget-friendly picks, or quick meal ideas from the Simba catalog."
+        : "Ask me about Simba products.",
+      products: [],
+    },
+  ]);
+}
+
+function normalizeAssistantToken(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function scoreAssistantProduct(product, query, intentCategories) {
+  const normalizedName = normalizeAssistantToken(product.name);
+  const normalizedCategory = normalizeAssistantToken(product.category);
+  const tokens = query.split(" ").filter(Boolean);
+  let score = 0;
+
+  if (normalizedName.includes(query)) score += 8;
+  if (normalizedCategory.includes(query)) score += 6;
+  for (const token of tokens) {
+    if (normalizedName.includes(token)) score += 3;
+    if (normalizedCategory.includes(token)) score += 2;
+  }
+  if (intentCategories.has(product.category)) score += 5;
+  if (product.inStock) score += 1;
+
+  return score;
+}
+
+function inferAssistantCategories(query, categories) {
+  const intentMap = {
+    breakfast: ["Food Products"],
+    lunch: ["Food Products"],
+    dinner: ["Food Products"],
+    snack: ["Food Products"],
+    juice: ["Food Products"],
+    baby: ["Baby Products"],
+    cosmetic: ["Cosmetics & Personal Care"],
+    beauty: ["Cosmetics & Personal Care"],
+    sport: ["Sports & Wellness"],
+    wellness: ["Sports & Wellness"],
+    kitchen: ["Kitchenware & Electronics"],
+    electronic: ["Kitchenware & Electronics"],
+    alcohol: ["Alcoholic Drinks"],
+    drink: ["Alcoholic Drinks", "Food Products"],
+  };
+
+  const inferred = new Set();
+  for (const [token, mappedCategories] of Object.entries(intentMap)) {
+    if (query.includes(token)) {
+      mappedCategories.forEach((category) => inferred.add(category));
+    }
+  }
+
+  categories.forEach((category) => {
+    const normalizedCategory = normalizeAssistantToken(category);
+    if (normalizedCategory && query.includes(normalizedCategory)) {
+      inferred.add(category);
+    }
+  });
+
+  return inferred;
+}
+
+function buildAssistantReply(state, rawQuery, tr) {
+  const query = normalizeAssistantToken(rawQuery);
+  const categories = getCategories(state.products);
+  const intentCategories = inferAssistantCategories(query, categories);
+  const scoredProducts = state.products
+    .map((product) => ({
+      product,
+      score: scoreAssistantProduct(product, query, intentCategories),
+    }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || Number(b.product.inStock) - Number(a.product.inStock) || a.product.price - b.product.price)
+    .slice(0, 5)
+    .map((entry) => entry.product);
+
+  if (!scoredProducts.length) {
+    const categoryPreview = categories.slice(0, 4).join(", ");
+    return {
+      text: `${tr("assistantNoMatch")} ${categoryPreview}.`,
+      products: [],
+    };
+  }
+
+  const broadQuery = query.split(" ").length <= 2 && !state.products.some((product) => normalizeAssistantToken(product.name).includes(query));
+  const intro = broadQuery ? tr("assistantBroadReply") : tr("assistantDirectReply");
+  return {
+    text: `${intro} ${scoredProducts.map((product) => product.name).slice(0, 3).join(", ")}.`,
+    products: scoredProducts,
+  };
 }
 
 function renderAccountView(state, cartSummary, tr) {
@@ -815,13 +1095,17 @@ function renderAccountView(state, cartSummary, tr) {
                                       const lineTotal = Number(item.lineTotal || 0);
                                       const unitPrice = qty > 0 ? lineTotal / qty : lineTotal;
                                       return `
-                                        <div class="summary-card__row">
-                                          <span>${escapeHtml(item.name)} x${qty}</span>
-                                          <strong>${formatPrice(unitPrice)} (${tr("priceLabel")})</strong>
-                                        </div>
+                                      <div class="summary-card__row">
+                                        <span>${escapeHtml(item.name)} x${qty}</span>
+                                        <strong>${formatPrice(unitPrice)} (${tr("priceLabel")})</strong>
+                                      </div>
                                       `;
                                     })
                                     .join("")}
+                                </div>
+                                <div class="summary-card__row">
+                                  <span>${escapeHtml(formatPaymentMethodLabel(order.paymentMethod, tr))}</span>
+                                  <strong>${escapeHtml(formatPaymentStatus(order.paymentStatus, tr))}</strong>
                                 </div>
                               </div>
                             `,
@@ -1038,7 +1322,9 @@ function renderAdminView(state, filteredProducts, tr) {
                             <strong>${escapeHtml(customer.fullName || "-")}</strong>
                             <span class="muted">${escapeHtml(customer.email)}</span>
                           </span>
-                          <span class="pill">${customerMsgs.length}</span>
+                          <span>
+                            <span class="pill">${customerMsgs.length}</span>
+                          </span>
                         </button>
                         ${isOpen ? `
                           <div class="admin-customer-chat">
@@ -1111,7 +1397,13 @@ function renderAdminView(state, filteredProducts, tr) {
           </div>
           <div class="admin-orders-map-container">
             <div id="admin-orders-map" class="branches-map admin-orders-map"></div>
-            ${recentOrders.length === 0 ? `<div class="map-overlay">${tr("adminOrdersMapEmpty")}</div>` : ""}
+            ${
+              recentOrders.length === 0
+                ? `<div class="map-overlay">${tr("adminOrdersMapEmpty")}</div>`
+                : recentOrders.some((order) => resolveOrderMapLocation(order))
+                  ? ""
+                  : `<div class="map-overlay">${tr("adminOrdersMapHint")}</div>`
+            }
           </div>
         </article>
       </section>
@@ -1384,6 +1676,17 @@ function bindEvents(currentRoute) {
     }),
   );
   document.querySelector("#cart-toggle")?.addEventListener("click", () => toggleCart(true));
+  document.querySelector("#assistant-toggle")?.addEventListener("click", () => {
+    assistantOpen = !assistantOpen;
+    render();
+  });
+  document.querySelector("#assistant-close")?.addEventListener("click", () => {
+    assistantOpen = false;
+    render();
+  });
+  document.querySelector("#assistant-input")?.addEventListener("input", (event) => {
+    assistantInputState = event.target.value;
+  });
   document.querySelector("#nav-hamburger")?.addEventListener("click", () => {
     navOpen = !navOpen;
     render();
@@ -1450,7 +1753,7 @@ function bindEvents(currentRoute) {
       pendingAccountTargetId = String(button.dataset.accountTarget || "");
       customerNotificationsOpen = false;
       topbarNotificationsOpen = false;
-      markCustomerNotificationsSeen(getState().currentUser?.email);
+      markCustomerNotificationSeen(getState().currentUser?.email, button.dataset.notificationId);
       location.hash = targetHash.startsWith("/") ? targetHash : `/${targetHash.replace(/^#?\/?/, "")}`;
     }),
   );
@@ -1532,6 +1835,8 @@ function bindEvents(currentRoute) {
       district,
       paymentMethod: form.get("paymentMethod"),
       momoNumber: form.get("momoNumber"),
+      cardholderName: form.get("cardholderName"),
+      cardNumber: form.get("cardNumber"),
       address,
       notes: form.get("notes"),
       customerEmail: getState().currentUser?.email || "",
@@ -1717,6 +2022,41 @@ function bindEvents(currentRoute) {
     }
   });
 
+  document.querySelector("#assistant-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const message = String(form.get("message") || "").trim();
+    if (!message) return;
+
+    assistantPending = true;
+    assistantInputState = "";
+    const state = getState();
+    const nextMessages = [
+      ...(Array.isArray(state.assistantMessages) ? state.assistantMessages : []),
+      { id: Date.now(), role: "user", text: message, products: [] },
+    ];
+    setAssistantMessages(nextMessages);
+
+    const reply = buildAssistantReply(getState(), message, (key) => t(getState().language, key));
+    assistantPending = false;
+    setAssistantMessages([
+      ...nextMessages,
+      {
+        id: Date.now() + 1,
+        role: "assistant",
+        text: reply.text,
+        products: reply.products,
+      },
+    ]);
+  });
+
+  document.querySelectorAll("[data-assistant-product-id]").forEach((button) =>
+    button.addEventListener("click", () => {
+      const productId = Number(button.dataset.assistantProductId);
+      location.hash = `/product/${productId}`;
+    }),
+  );
+
   document.querySelector("#account-open-cart")?.addEventListener("click", () => toggleCart(true));
 
   document.querySelectorAll(".admin-customer-toggle").forEach((btn) =>
@@ -1810,17 +2150,11 @@ function bindEvents(currentRoute) {
   document.querySelector("#customer-notifications-toggle")?.addEventListener("click", (e) => {
     e.stopPropagation();
     customerNotificationsOpen = !customerNotificationsOpen;
-    if (customerNotificationsOpen) {
-      markCustomerNotificationsSeen(getState().currentUser?.email);
-    }
     render();
   });
   document.querySelector("#topbar-notifications-toggle")?.addEventListener("click", (e) => {
     e.stopPropagation();
     topbarNotificationsOpen = !topbarNotificationsOpen;
-    if (topbarNotificationsOpen) {
-      markCustomerNotificationsSeen(getState().currentUser?.email);
-    }
     render();
   });
 
@@ -1848,10 +2182,15 @@ function bindEvents(currentRoute) {
     clearContactFeedback();
     const paymentMethod = document.querySelector("#payment-method");
     const momoField = document.querySelector("#momo-field");
+    const cardFields = document.querySelector("#card-fields");
+    if (paymentMethod) {
+      checkoutPaymentMethodState = paymentMethod.value || checkoutPaymentMethodState;
+    }
     const syncMomoField = () => {
-      if (paymentMethod && momoField) {
-        momoField.style.display = paymentMethod.value === "momo" ? "flex" : "none";
-      }
+      if (!paymentMethod) return;
+      checkoutPaymentMethodState = paymentMethod.value;
+      if (momoField) momoField.style.display = paymentMethod.value === "momo" ? "flex" : "none";
+      if (cardFields) cardFields.style.display = paymentMethod.value === "card" ? "grid" : "none";
     };
 
     paymentMethod?.addEventListener("change", syncMomoField);
@@ -1879,11 +2218,23 @@ function setNotificationSeenMap(value) {
   localStorage.setItem(STORAGE_KEYS.customerNotificationSeenAt, JSON.stringify(value));
 }
 
-function markCustomerNotificationsSeen(email) {
+function getSeenNotificationIds(email) {
   const key = String(email || "").toLowerCase();
-  if (!key) return;
+  if (!key) return [];
   const seenMap = getNotificationSeenMap();
-  seenMap[key] = new Date().toISOString();
+  const value = seenMap[key];
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object" && Array.isArray(value.ids)) return value.ids;
+  return [];
+}
+
+function markCustomerNotificationSeen(email, notificationId) {
+  const key = String(email || "").toLowerCase();
+  if (!key || !notificationId) return;
+  const seenMap = getNotificationSeenMap();
+  const seenIds = new Set(getSeenNotificationIds(key));
+  seenIds.add(String(notificationId));
+  seenMap[key] = Array.from(seenIds);
   setNotificationSeenMap(seenMap);
 }
 
@@ -1891,11 +2242,12 @@ function getCustomerNotifications(state, tr) {
   if (state.currentUser?.role !== "customer") return [];
   const customerEmail = String(state.currentUser?.email || "").toLowerCase();
   if (!customerEmail) return [];
+  const seenIds = new Set(getSeenNotificationIds(customerEmail));
 
   return (state.customerNotificationFeed || [])
     .filter((entry) => {
       const targetEmail = String(entry.email || "").toLowerCase();
-      return targetEmail === customerEmail || targetEmail === "*";
+      return (targetEmail === customerEmail || targetEmail === "*") && !seenIds.has(String(entry.id));
     })
     .map((entry) => ({
       ...entry,
@@ -1953,7 +2305,8 @@ function renderCustomerNotificationSections(notifications, tr) {
                 return `
                   <button class="account-notification-item" type="button"
                     data-notification-hash="${escapeHtml(hash)}"
-                    data-account-target="${escapeHtml(target)}">
+                    data-account-target="${escapeHtml(target)}"
+                    data-notification-id="${escapeHtml(note.id)}">
                     <div class="notification-header">
                       <span class="pill notification-type">${escapeHtml(note.kindLabel || tr("customerNotificationGeneralType"))}</span>
                       <span class="notification-time">${timeAgo}</span>
@@ -2012,14 +2365,11 @@ function getUnreadCustomerNotificationCount(state) {
   if (state.currentUser?.role !== "customer") return 0;
   const customerEmail = String(state.currentUser?.email || "").toLowerCase();
   if (!customerEmail) return 0;
-
-  const seenMap = getNotificationSeenMap();
-  const seenAt = seenMap[customerEmail] ? new Date(seenMap[customerEmail]).getTime() : 0;
+  const seenIds = new Set(getSeenNotificationIds(customerEmail));
 
   return (state.customerNotificationFeed || []).filter((entry) => {
     const targetEmail = String(entry.email || "").toLowerCase();
-    const createdAt = new Date(entry.createdAt || 0).getTime();
-    return (targetEmail === customerEmail || targetEmail === "*") && createdAt > seenAt;
+    return (targetEmail === customerEmail || targetEmail === "*") && !seenIds.has(String(entry.id));
   }).length;
 }
 
@@ -2097,6 +2447,92 @@ function findNearestBranch(lat, lng) {
   }, null);
 }
 
+function normalizeLocationText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function resolveOrderMapLocation(order) {
+  if (order?.customer?.location?.lat && order?.customer?.location?.lng) {
+    return {
+      lat: Number(order.customer.location.lat),
+      lng: Number(order.customer.location.lng),
+      label: "gps",
+      branch: order.customer.nearestBranch || null,
+    };
+  }
+
+  const customerText = normalizeLocationText(
+    [
+      order?.customer?.address,
+      order?.customer?.district,
+      order?.customer?.notes,
+    ].join(" "),
+  );
+
+  let bestBranch = null;
+  let bestScore = 0;
+  for (const branch of SIMBA_BRANCHES) {
+    const branchText = normalizeLocationText(`${branch.name} ${branch.address}`);
+    let score = 0;
+    for (const token of customerText.split(" ").filter(Boolean)) {
+      if (token.length < 3) continue;
+      if (branchText.includes(token)) score += 1;
+    }
+    if (customerText && branchText.includes(customerText)) score += 3;
+    if (score > bestScore) {
+      bestScore = score;
+      bestBranch = branch;
+    }
+  }
+
+  if (bestBranch && bestScore > 0) {
+    return {
+      lat: bestBranch.lat,
+      lng: bestBranch.lng,
+      label: "address-match",
+      branch: bestBranch,
+    };
+  }
+
+  if (order?.customer?.nearestBranch?.lat && order?.customer?.nearestBranch?.lng) {
+    return {
+      lat: Number(order.customer.nearestBranch.lat),
+      lng: Number(order.customer.nearestBranch.lng),
+      label: "nearest-branch",
+      branch: order.customer.nearestBranch,
+    };
+  }
+
+  if (order?.customer?.nearestBranch?.id) {
+    const branch = SIMBA_BRANCHES.find((entry) => entry.id === order.customer.nearestBranch.id);
+    if (branch) {
+      return {
+        lat: branch.lat,
+        lng: branch.lng,
+        label: "nearest-branch",
+        branch,
+      };
+    }
+  }
+
+  return null;
+}
+
+async function persistCustomerLocationIfAvailable() {
+  const state = getState();
+  if (!state.isAuthenticated || state.currentUser?.role !== "customer" || !customerLocationState) return;
+
+  await syncAccountLocation({
+    email: state.currentUser.email,
+    lastKnownLocation: customerLocationState,
+    lastNearestBranch: nearestBranchState,
+  });
+}
+
 function requestUserLocation() {
   if (!navigator.geolocation) {
     locationStatusState = "error";
@@ -2121,7 +2557,7 @@ function requestUserLocation() {
       };
       nearestBranchState = findNearestBranch(customerLocationState.lat, customerLocationState.lng);
       locationStatusState = "";
-      render();
+      persistCustomerLocationIfAvailable().finally(() => render());
     },
     (err) => {
       console.error('Geolocation error:', err);
@@ -2171,7 +2607,6 @@ function initBranchesMap() {
   loadLeaflet(() => {
     mountBranchesMap(document.getElementById("branches-map"));
     mountAdminOrdersMap();
-    mountAdminCustomersMap();
   });
 }
 
@@ -2288,7 +2723,9 @@ function mountAdminOrdersMap() {
   if (!mapEl || !window.L) return;
   const L = window.L;
   const state = getState();
-  const ordersWithLocation = state.orders.filter((o) => o.customer?.location);
+  const ordersWithLocation = state.orders
+    .map((order) => ({ order, resolvedLocation: resolveOrderMapLocation(order) }))
+    .filter((entry) => Boolean(entry.resolvedLocation));
   
   // Clear any existing map
   if (mapEl._leaflet_id) {
@@ -2310,8 +2747,8 @@ function mountAdminOrdersMap() {
   });
   
   const bounds = [];
-  ordersWithLocation.forEach((order, index) => {
-    const { lat, lng } = order.customer.location;
+  ordersWithLocation.forEach(({ order, resolvedLocation }) => {
+    const { lat, lng } = resolvedLocation;
     bounds.push([lat, lng]);
     const customerLatLng = [lat, lng];
     
@@ -2329,8 +2766,9 @@ function mountAdminOrdersMap() {
       `);
     
     // Draw line to nearest branch if available
-    if (order.customer.nearestBranch) {
-      const nb = SIMBA_BRANCHES.find((b) => b.id === order.customer.nearestBranch.id) || order.customer.nearestBranch;
+    const nearestBranch = resolvedLocation.branch || order.customer.nearestBranch;
+    if (nearestBranch) {
+      const nb = SIMBA_BRANCHES.find((b) => b.id === nearestBranch.id) || nearestBranch;
       const branchLatLng = [nb.lat, nb.lng];
       L.polyline([customerLatLng, branchLatLng], { 
         color: "#13806d", 
@@ -2387,8 +2825,19 @@ function generateNonce() {
   return Array.from(buffer, (value) => value.toString(16).padStart(2, "0")).join("");
 }
 
+function resolveGoogleClientId() {
+  const runtimeClientId =
+    window.SIMBA_GOOGLE_CLIENT_ID ||
+    document.querySelector('meta[name="google-client-id"]')?.content ||
+    localStorage.getItem("simba.google-client-id") ||
+    GOOGLE_CLIENT_ID;
+
+  return String(runtimeClientId || "").trim();
+}
+
 function isGoogleConfigured() {
-  return Boolean(GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.includes("YOUR_GOOGLE_CLIENT_ID"));
+  const clientId = resolveGoogleClientId();
+  return Boolean(clientId && !clientId.includes("YOUR_GOOGLE_CLIENT_ID"));
 }
 
 function getGoogleRedirectUri() {
@@ -2404,9 +2853,10 @@ function startGoogleRedirect() {
   const nonce = generateNonce();
   const state = generateNonce();
   sessionStorage.setItem(STORAGE_KEYS.googleNonce, nonce);
+  sessionStorage.setItem(STORAGE_KEYS.googleState, state);
 
   const params = new URLSearchParams({
-    client_id: GOOGLE_CLIENT_ID,
+    client_id: resolveGoogleClientId(),
     redirect_uri: getGoogleRedirectUri(),
     response_type: "id_token",
     scope: "openid email profile",
@@ -2426,11 +2876,14 @@ async function handleGoogleAuthCallback() {
   const googleError = hashParams.get("error");
   const idToken = hashParams.get("id_token");
   const nonce = sessionStorage.getItem(STORAGE_KEYS.googleNonce) || "";
+  const expectedState = sessionStorage.getItem(STORAGE_KEYS.googleState) || "";
+  const returnedState = hashParams.get("state") || "";
 
   history.replaceState(null, "", `${window.location.pathname}#/`);
   sessionStorage.removeItem(STORAGE_KEYS.googleNonce);
+  sessionStorage.removeItem(STORAGE_KEYS.googleState);
 
-  if (googleError || !idToken) {
+  if (googleError || !idToken || (expectedState && returnedState !== expectedState)) {
     setAuthFeedback("googleCancelled");
     return;
   }

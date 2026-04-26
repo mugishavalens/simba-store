@@ -2476,3 +2476,137 @@ body {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
+
+.payment-method-panel,
+.checkout-success-meta {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-strong);
+}
+
+.assistant-shell {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 45;
+  display: grid;
+  justify-items: end;
+  gap: 0.75rem;
+}
+
+.assistant-launcher {
+  min-height: 48px;
+  padding: 0.8rem 1rem;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), #1fa38b);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+}
+
+.assistant-panel {
+  width: min(380px, calc(100vw - 2rem));
+  max-height: min(70vh, 620px);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--surface) 94%, white 6%);
+  box-shadow: var(--shadow);
+}
+
+.assistant-panel__head,
+.assistant-form {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.assistant-panel__head {
+  justify-content: space-between;
+}
+
+.assistant-panel__head p {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.assistant-panel__messages {
+  display: grid;
+  gap: 0.7rem;
+  overflow-y: auto;
+  padding-right: 0.15rem;
+}
+
+.assistant-bubble {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+}
+
+.assistant-bubble--user {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+}
+
+.assistant-bubble p {
+  margin: 0;
+}
+
+.assistant-products {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.assistant-product {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.assistant-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.78rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
+@media (max-width: 560px) {
+  .assistant-shell {
+    right: 0.75rem;
+    left: 0.75rem;
+    justify-items: stretch;
+  }
+
+  .assistant-panel,
+  .assistant-launcher {
+    width: 100%;
+  }
+
+  .assistant-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
