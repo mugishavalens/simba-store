@@ -1,4 +1,4 @@
-import { DEFAULT_ADMIN, GOOGLE_CLIENT_ID, STORAGE_KEYS } from "./constants.js";
+import { DEFAULT_ADMIN, DEMO_BRANCH_USERS, GOOGLE_CLIENT_ID, PICKUP_DEPOSIT_RWF, SIMBA_BRANCHES, STORAGE_KEYS } from "./constants.js";
 
 function resolveGoogleClientId() {
   return String(localStorage.getItem("simba.google-client-id") || GOOGLE_CLIENT_ID || "").trim();
@@ -17,27 +17,6 @@ function writeStorage(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-function ensureDefaultAdmin(users) {
-  const adminEmail = DEFAULT_ADMIN.email.toLowerCase();
-  const normalizedUsers = users.map((user) => ({
-    ...user,
-    email: String(user.email || "").toLowerCase(),
-    role: user.email?.toLowerCase() === adminEmail ? "admin" : user.role === "admin" ? "customer" : user.role,
-  }));
-  const withoutAdminEmail = normalizedUsers.filter((user) => user.email !== adminEmail);
-  const seededAdmin = {
-    ...DEFAULT_ADMIN,
-    email: adminEmail,
-    role: "admin",
-    createdAt: new Date().toISOString(),
-  };
-
-  return {
-    users: [seededAdmin, ...withoutAdminEmail],
-    seeded: true,
-  };
-}
-
 function publicUser(user) {
   return {
     id: user.id,
@@ -45,9 +24,30 @@ function publicUser(user) {
     email: user.email,
     role: user.role,
     avatarUrl: user.avatarUrl || "",
+    branchId: user.branchId || null,
     lastKnownLocation: user.lastKnownLocation || null,
     lastNearestBranch: user.lastNearestBranch || null,
+    noShowFlags: Number(user.noShowFlags || 0),
   };
+}
+
+function seedUsers(users) {
+  const seeded = [DEFAULT_ADMIN, ...DEMO_BRANCH_USERS].map((user) => ({
+    ...user,
+    email: String(user.email || "").toLowerCase(),
+    createdAt: user.createdAt || new Date().toISOString(),
+  }));
+  const seededEmails = new Set(seeded.map((user) => user.email));
+  const normalizedUsers = users
+    .map((user) => ({ ...user, email: String(user.email || "").toLowerCase() }))
+    .filter((user) => !seededEmails.has(user.email));
+  return [...seeded, ...normalizedUsers];
+}
+
+function ensureUsers() {
+  const users = seedUsers(readStorage(STORAGE_KEYS.users, []));
+  writeStorage(STORAGE_KEYS.users, users);
+  return users;
 }
 
 function createReference(prefix) {
@@ -97,23 +97,58 @@ function verifyGoogleToken(idToken, expectedNonce) {
   return { ok: true, payload };
 }
 
-export function hydrateSession() {
-  const seeded = ensureDefaultAdmin(readStorage(STORAGE_KEYS.users, []));
-  if (seeded.seeded) {
-    writeStorage(STORAGE_KEYS.users, seeded.users);
-  }
+function makeBranchStock() {
+  return Object.fromEntries(
+    SIMBA_BRANCHES.map((branch, index) => [branch.id, 6 + ((index * 3) % 9)]),
+  );
+}
 
+function normalizeProductInventory(product) {
+  const branchStock = {};
+  for (const branch of SIMBA_BRANCHES) {
+    const raw = product.branchStock?.[branch.id];
+    branchStock[branch.id] = Number.isFinite(Number(raw))
+      ? Math.max(0, Math.floor(Number(raw)))
+      : makeBranchStock()[branch.id];
+  }
   return {
-    users: seeded.users,
+    ...product,
+    branchStock,
+    inStock: Object.values(branchStock).some((count) => count > 0),
+  };
+}
+
+function ensureProducts() {
+  const products = readStorage(STORAGE_KEYS.products, []).map(normalizeProductInventory);
+  if (products.length) {
+    writeStorage(STORAGE_KEYS.products, products);
+  }
+  return products;
+}
+
+function getBranchReviewSummary(reviews, branchId) {
+  const branchReviews = reviews.filter((review) => Number(review.branchId) === Number(branchId));
+  const count = branchReviews.length;
+  const avg = count
+    ? branchReviews.reduce((sum, review) => sum + Number(review.rating || 0), 0) / count
+    : 0;
+  return { count, average: Number(avg.toFixed(1)) };
+}
+
+export function hydrateSession() {
+  const users = ensureUsers();
+  return {
+    users,
     currentUser: readStorage(STORAGE_KEYS.currentUser, null),
     isAuthenticated: readStorage(STORAGE_KEYS.auth, false),
     orders: readStorage(STORAGE_KEYS.orders, []),
     messages: readStorage(STORAGE_KEYS.messages, []),
+    branchReviews: readStorage(STORAGE_KEYS.branchReviews, []),
   };
 }
 
 export async function registerUser(payload) {
-  const users = ensureDefaultAdmin(readStorage(STORAGE_KEYS.users, [])).users;
+  const users = ensureUsers();
   const email = String(payload.email).trim().toLowerCase();
   if (users.some((user) => user.email === email)) {
     return { ok: false, code: "exists" };
@@ -125,6 +160,7 @@ export async function registerUser(payload) {
     email,
     role: "customer",
     password: payload.password,
+    noShowFlags: 0,
     createdAt: new Date().toISOString(),
   };
 
@@ -142,35 +178,12 @@ export async function registerUser(payload) {
 }
 
 export async function loginUser(payload) {
-  const users = ensureDefaultAdmin(readStorage(STORAGE_KEYS.users, [])).users;
+  const users = ensureUsers();
   const email = String(payload.email).trim().toLowerCase();
   const password = String(payload.password || "");
-
-  if (email === DEFAULT_ADMIN.email.toLowerCase()) {
-    if (password !== DEFAULT_ADMIN.password) {
-      return { ok: false, code: "invalid" };
-    }
-    const adminUser = users.find((entry) => entry.email === email && entry.role === "admin");
-    if (!adminUser) {
-      return { ok: false, code: "invalid" };
-    }
-    writeStorage(STORAGE_KEYS.currentUser, publicUser(adminUser));
-    writeStorage(STORAGE_KEYS.auth, true);
-    return {
-      ok: true,
-      code: "welcome",
-      user: publicUser(adminUser),
-      users,
-    };
-  }
-
-  const user = users.find((entry) => entry.email === email && entry.password === payload.password);
+  const user = users.find((entry) => entry.email === email && entry.password === password);
 
   if (!user) {
-    return { ok: false, code: "invalid" };
-  }
-
-  if (payload.portal === "admin" && user.role !== "admin") {
     return { ok: false, code: "invalid" };
   }
 
@@ -186,7 +199,7 @@ export async function loginUser(payload) {
 }
 
 export async function resetUserPassword(payload) {
-  const users = ensureDefaultAdmin(readStorage(STORAGE_KEYS.users, [])).users;
+  const users = ensureUsers();
   const email = String(payload.email).trim().toLowerCase();
   const index = users.findIndex((entry) => entry.email === email);
 
@@ -205,7 +218,7 @@ export async function resetUserPassword(payload) {
 }
 
 export async function loginWithGoogleUser(payload = {}) {
-  const users = ensureDefaultAdmin(readStorage(STORAGE_KEYS.users, [])).users;
+  const users = ensureUsers();
   const googleClientId = resolveGoogleClientId();
   if (!googleClientId || googleClientId.includes("YOUR_GOOGLE_CLIENT_ID")) {
     return { ok: false, code: "googleSetupRequired" };
@@ -218,7 +231,10 @@ export async function loginWithGoogleUser(payload = {}) {
 
   const googlePayload = verification.payload;
   const googleEmail = String(googlePayload.email || "").trim().toLowerCase();
-  if (googleEmail === DEFAULT_ADMIN.email.toLowerCase()) {
+  if (
+    googleEmail === DEFAULT_ADMIN.email.toLowerCase() ||
+    DEMO_BRANCH_USERS.some((user) => user.email.toLowerCase() === googleEmail)
+  ) {
     return { ok: false, code: "googleAdminRestricted" };
   }
 
@@ -233,10 +249,10 @@ export async function loginWithGoogleUser(payload = {}) {
       password: "google-oauth",
       authProvider: "google",
       avatarUrl: googlePayload.picture || "",
+      noShowFlags: 0,
       createdAt: new Date().toISOString(),
     };
     users.push(user);
-    writeStorage(STORAGE_KEYS.users, users);
   } else {
     user = {
       ...user,
@@ -247,9 +263,9 @@ export async function loginWithGoogleUser(payload = {}) {
     };
     const index = users.findIndex((entry) => entry.email === googleEmail);
     users[index] = user;
-    writeStorage(STORAGE_KEYS.users, users);
   }
 
+  writeStorage(STORAGE_KEYS.users, users);
   writeStorage(STORAGE_KEYS.currentUser, publicUser(user));
   writeStorage(STORAGE_KEYS.auth, true);
 
@@ -320,7 +336,7 @@ export async function replySupportMessage(payload) {
 }
 
 export async function updateUserProfile(payload) {
-  const users = ensureDefaultAdmin(readStorage(STORAGE_KEYS.users, [])).users;
+  const users = ensureUsers();
   const email = String(payload.email).trim().toLowerCase();
   const index = users.findIndex((entry) => entry.email === email);
 
@@ -350,7 +366,7 @@ export async function updateUserProfile(payload) {
 }
 
 export async function updateUserLocation(payload) {
-  const users = ensureDefaultAdmin(readStorage(STORAGE_KEYS.users, [])).users;
+  const users = ensureUsers();
   const email = String(payload.email).trim().toLowerCase();
   const index = users.findIndex((entry) => entry.email === email);
 
@@ -379,39 +395,78 @@ export async function updateUserLocation(payload) {
 
 export async function createOrder(payload) {
   const orders = readStorage(STORAGE_KEYS.orders, []);
-  let nextUsers = null;
-  const paymentMethod = payload.paymentMethod;
-  const normalizedMethod = ["momo", "card", "cash"].includes(paymentMethod) ? paymentMethod : "cash";
-  const paymentStatusMap = {
-    momo: "awaiting_momo_confirmation",
-    card: "card_authorized",
-    cash: "pay_on_delivery",
-  };
-  const paymentNotesMap = {
-    momo: `Awaiting MoMo confirmation on ${String(payload.momoNumber || "").trim() || "the provided number"}.`,
-    card: `Card authorization simulated for ${String(payload.cardholderName || "customer").trim()}.`,
-    cash: "Customer will pay in cash on delivery.",
-  };
+  const users = ensureUsers();
+  const products = ensureProducts();
+  const branchId = Number(payload.branchId);
+  const pickupBranch = SIMBA_BRANCHES.find((branch) => branch.id === branchId);
 
+  if (!pickupBranch) {
+    return { ok: false, code: "branchRequired" };
+  }
+  if (!String(payload.pickupTime || "").trim()) {
+    return { ok: false, code: "pickupTimeRequired" };
+  }
+  if (!String(payload.phone || "").trim()) {
+    return { ok: false, code: "phoneRequired" };
+  }
+
+  const customerEmail = String(payload.customerEmail || "").trim().toLowerCase();
+  const customer = users.find((entry) => String(entry.email || "").toLowerCase() === customerEmail);
+  const depositAmount = Number(payload.depositAmount || PICKUP_DEPOSIT_RWF);
+  const requiredDeposit = Number(customer?.noShowFlags || 0) >= 2 ? depositAmount * 2 : depositAmount;
+  const normalizedMethod = ["momo", "card"].includes(String(payload.paymentMethod || "")) ? String(payload.paymentMethod) : "momo";
+
+  if (normalizedMethod === "momo" && !String(payload.momoNumber || "").trim()) {
+    return { ok: false, code: "momoNumberRequired" };
+  }
+
+  for (const item of payload.items || []) {
+    const product = products.find((entry) => Number(entry.id) === Number(item.productId));
+    const branchQty = Number(product?.branchStock?.[branchId] || 0);
+    if (!product || branchQty < Number(item.quantity || 0)) {
+      return { ok: false, code: "branchStockUnavailable" };
+    }
+  }
+
+  const now = new Date().toISOString();
   const order = {
     id: Date.now(),
     reference: createReference("SIMBA"),
-    paymentReference: createReference(normalizedMethod.toUpperCase()),
+    paymentReference: createReference("DEP"),
+    fulfillmentType: "pickup",
+    pickupBranch,
+    pickupTime: String(payload.pickupTime).trim(),
     paymentMethod: normalizedMethod,
-    paymentStatus: paymentStatusMap[normalizedMethod] || "pending",
+    paymentStatus: normalizedMethod === "momo" ? "deposit_pending" : "deposit_authorized",
     paymentTimeline: [
       {
         label: "created",
-        at: new Date().toISOString(),
-        note: paymentNotesMap[normalizedMethod] || "Payment request created.",
+        at: now,
+        note: `Pickup order created for ${pickupBranch.name}.`,
+      },
+      {
+        label: "deposit",
+        at: now,
+        note:
+          normalizedMethod === "momo"
+            ? `MoMo deposit request created for ${requiredDeposit} RWF.`
+            : `Card deposit authorization simulated for ${requiredDeposit} RWF.`,
       },
     ],
+    depositAmount: requiredDeposit,
+    status: "pending",
+    assignedStaffEmail: "",
+    assignedStaffName: "",
+    acceptedBy: "",
+    acceptedAt: "",
+    readyAt: "",
+    completedAt: "",
     customer: {
       fullName: String(payload.fullName).trim(),
-      email: String(payload.customerEmail || "").trim().toLowerCase(),
+      email: customerEmail,
       phone: String(payload.phone).trim(),
-      district: String(payload.district).trim(),
-      address: String(payload.address).trim(),
+      district: String(payload.district || "").trim(),
+      address: String(payload.address || "").trim(),
       notes: String(payload.notes || "").trim(),
       momoNumber: String(payload.momoNumber || "").trim(),
       location: payload.customerLocation || null,
@@ -421,31 +476,49 @@ export async function createOrder(payload) {
       momoNumber: String(payload.momoNumber || "").trim(),
       cardholderName: String(payload.cardholderName || "").trim(),
       cardLast4: String(payload.cardNumber || "").replace(/\D/g, "").slice(-4),
-      instructions: paymentNotesMap[normalizedMethod] || "",
+      instructions:
+        normalizedMethod === "momo"
+          ? `Your order requires a ${requiredDeposit} RWF MoMo deposit to confirm pickup.`
+          : `A ${requiredDeposit} RWF pickup deposit was authorized on card for demo purposes.`,
     },
-    items: payload.items,
+    items: (payload.items || []).map((item) => ({
+      ...item,
+      branchId,
+    })),
     totals: payload.totals,
-    createdAt: new Date().toISOString(),
+    createdAt: now,
   };
+
+  const nextProducts = products.map((product) => {
+    const item = order.items.find((entry) => Number(entry.productId) === Number(product.id));
+    if (!item) return product;
+    const nextBranchStock = {
+      ...product.branchStock,
+      [branchId]: Math.max(0, Number(product.branchStock?.[branchId] || 0) - Number(item.quantity || 0)),
+    };
+    return {
+      ...product,
+      branchStock: nextBranchStock,
+      inStock: Object.values(nextBranchStock).some((count) => Number(count) > 0),
+    };
+  });
 
   orders.unshift(order);
   writeStorage(STORAGE_KEYS.orders, orders);
+  writeStorage(STORAGE_KEYS.products, nextProducts);
 
-  const customerEmail = String(payload.customerEmail || "").trim().toLowerCase();
-  if (customerEmail) {
-    const users = ensureDefaultAdmin(readStorage(STORAGE_KEYS.users, [])).users;
+  let nextUsers = users;
+  if (customer) {
     const userIndex = users.findIndex((entry) => String(entry.email || "").toLowerCase() === customerEmail);
-    if (userIndex >= 0) {
-      users[userIndex] = {
-        ...users[userIndex],
-        lastKnownLocation: payload.customerLocation || users[userIndex].lastKnownLocation || null,
-        lastNearestBranch: payload.nearestBranch || users[userIndex].lastNearestBranch || null,
-        lastOrderAt: order.createdAt,
-        updatedAt: order.createdAt,
-      };
-      writeStorage(STORAGE_KEYS.users, users);
-      nextUsers = users;
-    }
+    users[userIndex] = {
+      ...users[userIndex],
+      lastKnownLocation: payload.customerLocation || users[userIndex].lastKnownLocation || null,
+      lastNearestBranch: payload.nearestBranch || users[userIndex].lastNearestBranch || null,
+      lastOrderAt: now,
+      updatedAt: now,
+    };
+    writeStorage(STORAGE_KEYS.users, users);
+    nextUsers = users;
   }
 
   return {
@@ -454,5 +527,148 @@ export async function createOrder(payload) {
     order,
     orders,
     users: nextUsers,
+    products: nextProducts,
+  };
+}
+
+export async function updateOrderStatus(payload) {
+  const orders = readStorage(STORAGE_KEYS.orders, []);
+  const users = ensureUsers();
+  const orderId = Number(payload.orderId);
+  const index = orders.findIndex((entry) => Number(entry.id) === orderId);
+  if (index === -1) {
+    return { ok: false, code: "orderMissing" };
+  }
+
+  const now = new Date().toISOString();
+  const order = { ...orders[index] };
+  const actorName = String(payload.actorName || "Simba Team").trim();
+  const actorEmail = String(payload.actorEmail || "").trim().toLowerCase();
+  const action = String(payload.action || "").trim();
+
+  if (action === "accept") {
+    order.status = "accepted";
+    order.acceptedAt = now;
+    order.acceptedBy = actorName;
+    order.paymentStatus = order.paymentMethod === "momo" ? "deposit_confirmed" : order.paymentStatus;
+    order.paymentTimeline = [
+      ...(order.paymentTimeline || []),
+      { label: "accepted", at: now, note: `${actorName} accepted the order for branch preparation.` },
+    ];
+  } else if (action === "assign") {
+    order.status = "assigned";
+    order.assignedStaffEmail = actorEmail;
+    order.assignedStaffName = actorName;
+    order.paymentTimeline = [
+      ...(order.paymentTimeline || []),
+      { label: "assigned", at: now, note: `${actorName} was assigned to prepare the order.` },
+    ];
+  } else if (action === "ready") {
+    order.status = "ready";
+    order.readyAt = now;
+    order.paymentTimeline = [
+      ...(order.paymentTimeline || []),
+      { label: "ready", at: now, note: `${actorName} marked the order ready for pickup.` },
+    ];
+  } else if (action === "complete") {
+    order.status = "completed";
+    order.completedAt = now;
+    order.paymentTimeline = [
+      ...(order.paymentTimeline || []),
+      { label: "completed", at: now, note: `${actorName} completed customer pickup.` },
+    ];
+  } else if (action === "no_show") {
+    order.status = "no_show";
+    order.paymentTimeline = [
+      ...(order.paymentTimeline || []),
+      { label: "no_show", at: now, note: `${actorName} marked the customer as no-show.` },
+    ];
+    const customerIndex = users.findIndex(
+      (entry) => String(entry.email || "").toLowerCase() === String(order.customer?.email || "").toLowerCase(),
+    );
+    if (customerIndex >= 0) {
+      users[customerIndex] = {
+        ...users[customerIndex],
+        noShowFlags: Number(users[customerIndex].noShowFlags || 0) + 1,
+        updatedAt: now,
+      };
+      writeStorage(STORAGE_KEYS.users, users);
+    }
+  } else {
+    return { ok: false, code: "workflowInvalid" };
+  }
+
+  orders[index] = order;
+  writeStorage(STORAGE_KEYS.orders, orders);
+  return { ok: true, code: "workflowUpdated", orders, users, order };
+}
+
+export async function updateBranchInventory(payload) {
+  const products = ensureProducts();
+  const productId = Number(payload.productId);
+  const branchId = Number(payload.branchId);
+  const stock = Math.max(0, Math.floor(Number(payload.stock || 0)));
+  const index = products.findIndex((entry) => Number(entry.id) === productId);
+  if (index === -1) {
+    return { ok: false, code: "productMissing" };
+  }
+
+  const nextProduct = {
+    ...products[index],
+    branchStock: {
+      ...products[index].branchStock,
+      [branchId]: stock,
+    },
+  };
+  nextProduct.inStock = Object.values(nextProduct.branchStock).some((count) => Number(count) > 0);
+  products[index] = nextProduct;
+  writeStorage(STORAGE_KEYS.products, products);
+  return { ok: true, code: "inventoryUpdated", products, product: nextProduct };
+}
+
+export async function submitBranchReview(payload) {
+  const reviews = readStorage(STORAGE_KEYS.branchReviews, []);
+  const orders = readStorage(STORAGE_KEYS.orders, []);
+  const orderId = Number(payload.orderId);
+  const orderIndex = orders.findIndex((entry) => Number(entry.id) === orderId);
+  if (orderIndex === -1) {
+    return { ok: false, code: "orderMissing" };
+  }
+  if (orders[orderIndex].status !== "completed") {
+    return { ok: false, code: "reviewUnavailable" };
+  }
+  if (orders[orderIndex].branchReview) {
+    return { ok: false, code: "reviewExists" };
+  }
+
+  const rating = Math.min(5, Math.max(1, Number(payload.rating || 0)));
+  if (!rating) {
+    return { ok: false, code: "ratingRequired" };
+  }
+
+  const review = {
+    id: Date.now(),
+    orderId,
+    branchId: Number(payload.branchId),
+    branchName: String(payload.branchName || "").trim(),
+    rating,
+    comment: String(payload.comment || "").trim(),
+    customerEmail: String(payload.customerEmail || "").trim().toLowerCase(),
+    customerName: String(payload.customerName || "").trim(),
+    createdAt: new Date().toISOString(),
+  };
+  reviews.unshift(review);
+  orders[orderIndex] = {
+    ...orders[orderIndex],
+    branchReview: review,
+  };
+  writeStorage(STORAGE_KEYS.branchReviews, reviews);
+  writeStorage(STORAGE_KEYS.orders, orders);
+  return {
+    ok: true,
+    code: "reviewSaved",
+    reviews,
+    orders,
+    summary: getBranchReviewSummary(reviews, review.branchId),
   };
 }

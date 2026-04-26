@@ -15,6 +15,7 @@ export const STORAGE_KEYS = {
   customerNotificationFeed: "simba.customer-notification-feed.v1",
   productSnapshot: "simba.product-snapshot.v1",
   assistantMessages: "simba.assistant-messages.v1",
+  branchReviews: "simba.branch-reviews.v1",
 };
 
 export const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
@@ -47,6 +48,15 @@ export const DEFAULT_FILTERS = {
 
 export const PAYMENT_METHODS = ["momo", "card", "cash"];
 
+export const PICKUP_DEPOSIT_RWF = 500;
+
+export const PICKUP_TIMES = [
+  "08:00 - 09:00", "09:00 - 10:00", "10:00 - 11:00",
+  "11:00 - 12:00", "12:00 - 13:00", "13:00 - 14:00",
+  "14:00 - 15:00", "15:00 - 16:00", "16:00 - 17:00",
+  "17:00 - 18:00", "18:00 - 19:00",
+];
+
 export const DEFAULT_ADMIN = {
   id: 1,
   fullName: "Simba Admin",
@@ -55,19 +65,35 @@ export const DEFAULT_ADMIN = {
   password: "SimbaAdmin@2026",
 };
 
+export const DEMO_BRANCH_USERS = [
+  {
+    id: 2,
+    fullName: "Remera Branch Manager",
+    email: "manager.remera@simba.rw",
+    role: "manager",
+    password: "SimbaBranch@2026",
+    branchId: 1,
+  },
+  {
+    id: 3,
+    fullName: "Remera Branch Staff",
+    email: "staff.remera@simba.rw",
+    role: "staff",
+    password: "SimbaBranch@2026",
+    branchId: 1,
+  },
+];
+
 export const SIMBA_BRANCHES = [
-  { id: 1,  name: "Simba Supermarket - Kiyovu (UTC)",        lat: -1.9500, lng: 30.0588, address: "KN 34 St, Union Trade Center, Kigali" },
-  { id: 2,  name: "Simba Supermarket - Gishushu",            lat: -1.9441, lng: 30.0762, address: "KN 5 Road, near RDB, Gasabo, Kigali" },
-  { id: 3,  name: "Simba Supermarket - Gacuriro (Simba Center)", lat: -1.9220, lng: 30.0950, address: "KN 4 Ave & KG 14 Ave, Kigali" },
-  { id: 4,  name: "Simba Supermarket - Kicukiro",             lat: -1.9897, lng: 30.0892, address: "Kicukiro Center, Kicukiro District, Kigali" },
-  { id: 5,  name: "Simba Supermarket - Kimihurura",           lat: -1.9380, lng: 30.0870, address: "Kimihurura, Kigali" },
-  { id: 6,  name: "Simba Supermarket - Nyarutarama",          lat: -1.9270, lng: 30.1020, address: "10 KG 334 St, Gasabo District, Kigali" },
-  { id: 7,  name: "Simba Supermarket - Centenary House",      lat: -1.9490, lng: 30.0600, address: "Ground Floor, KN 4 Ave, City Center, Kigali" },
-  { id: 8,  name: "Simba Stationery - KSEZ",                  lat: -1.9150, lng: 30.0680, address: "Phase 2, Gasabo District, Kigali" },
-  { id: 9,  name: "Simba Stationery - Downtown",              lat: -1.9510, lng: 30.0570, address: "Near La Galette, Nyarugenge District, Kigali" },
-  { id: 10, name: "Simba Distributor - Rubavu",               lat: -1.6800, lng: 29.3500, address: "Western Province, Rubavu" },
-  { id: 11, name: "Simba Distributor - Huye",                 lat: -2.5960, lng: 29.7390, address: "Southern Province, Huye" },
-  { id: 12, name: "Simba Distributor - Bugesera",             lat: -2.1500, lng: 30.1500, address: "Eastern Province, Bugesera" },
+  { id: 1,  name: "Simba Supermarket Remera",      lat: -1.9441, lng: 30.1122, address: "KG 9 Ave, Remera, Kigali" },
+  { id: 2,  name: "Simba Supermarket Kimironko",   lat: -1.9302, lng: 30.1147, address: "KG 11 Ave, Kimironko, Kigali" },
+  { id: 3,  name: "Simba Supermarket Kacyiru",     lat: -1.9380, lng: 30.0870, address: "KG 7 Ave, Kacyiru, Kigali" },
+  { id: 4,  name: "Simba Supermarket Nyamirambo",  lat: -1.9750, lng: 30.0450, address: "KN 3 Rd, Nyamirambo, Kigali" },
+  { id: 5,  name: "Simba Supermarket Gikondo",     lat: -1.9897, lng: 30.0892, address: "KK 15 Rd, Gikondo, Kigali" },
+  { id: 6,  name: "Simba Supermarket Kanombe",     lat: -1.9690, lng: 30.1350, address: "KK 737 St, Kanombe, Kigali" },
+  { id: 7,  name: "Simba Supermarket Kinyinya",    lat: -1.9100, lng: 30.1200, address: "KG 18 Ave, Kinyinya, Kigali" },
+  { id: 8,  name: "Simba Supermarket Kibagabaga",  lat: -1.9200, lng: 30.1300, address: "KG 21 Ave, Kibagabaga, Kigali" },
+  { id: 9,  name: "Simba Supermarket Nyanza",      lat: -2.3500, lng: 29.7400, address: "Nyanza Town, Southern Province" },
 ];
 
 export const SHOPPING_ASSISTANT_PROMPT = `You are an intelligent shopping assistant for Simba Supermarket in Rwanda.

@@ -3,6 +3,8 @@ import {
   GOOGLE_CLIENT_ID,
   LANGUAGES,
   PAYMENT_METHODS,
+  PICKUP_DEPOSIT_RWF,
+  PICKUP_TIMES,
   SHOPPING_ASSISTANT_PROMPT,
   SIMBA_BRANCHES,
   STORAGE_KEYS,
@@ -25,6 +27,7 @@ import {
   removeFromCart,
   resetPassword,
   saveProduct,
+  saveBranchReview,
   sendSupportReply,
   sendSupportMessage,
   setFilter,
@@ -37,10 +40,13 @@ import {
   syncAccountLocation,
   setAssistantMessages,
   toggleCart,
+  updateInventory,
   updateAccountProfile,
+  updateOrderWorkflow,
   updateQuantity,
 } from "./store.js";
 import { applyFilters, formatPrice, getCategories, route, summarizeCart } from "./utils.js";
+import { translateCategory } from "./i18n.js";
 
 const BRAND_LOGO =
   "data:image/jpeg;base64,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";
@@ -89,6 +95,10 @@ async function boot() {
   }
   seedAssistantConversation();
   await handleGoogleAuthCallback();
+}
+
+function renderCategoryLabel(language, category) {
+  return escapeHtml(translateCategory(language, category));
 }
 
 function render() {
@@ -159,7 +169,7 @@ function render() {
 function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
   const authMode = currentRoute.name === "auth";
   const isDark = state.theme === "dark";
-  const isAdmin = state.isAuthenticated && state.currentUser?.role === "admin";
+  const isAdmin = state.isAuthenticated && ["admin", "manager", "staff"].includes(state.currentUser?.role);
   const isCustomer = state.isAuthenticated && state.currentUser?.role === "customer";
   const topbarNotifications = isCustomer ? getCustomerNotifications(state, tr) : [];
   const topbarNotificationCount = isCustomer ? getUnreadCustomerNotificationCount(state) : 0;
@@ -284,7 +294,7 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
                 <div class="discover-filters">
                   <select class="select select--compact" id="category-filter">
                     <option value="all">${tr("allCategories")}</option>
-                    ${categories.map((category) => `<option value="${escapeHtml(category)}" ${state.filters.category === category ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}
+                    ${categories.map((category) => `<option value="${escapeHtml(category)}" ${state.filters.category === category ? "selected" : ""}>${renderCategoryLabel(state.language, category)}</option>`).join("")}
                   </select>
                   <select class="select select--compact" id="price-filter">
                     <option value="all">${tr("allPrices")}</option>
@@ -425,8 +435,8 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
             .map(
               (category) => `
                 <button class="category-card category-trigger" data-category="${escapeHtml(category)}" style="background-image: url('${CATEGORY_BACKGROUNDS[category] || CATEGORY_BACKGROUNDS.General}')">
-                  <span class="pill">${escapeHtml(category)}</span>
-                  <h3>${escapeHtml(category)}</h3>
+                  <span class="pill">${renderCategoryLabel(state.language, category)}</span>
+                  <h3>${renderCategoryLabel(state.language, category)}</h3>
                   <span>${state.products.filter((item) => item.category === category).length} ${tr("filterResults")}</span>
                 </button>
               `,
@@ -487,7 +497,11 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
           <div class="branches-grid">
             ${SIMBA_BRANCHES.map((branch, idx) => {
               const cls = nearestBranchState?.id === branch.id ? "branch-item branch-item--nearest" : "branch-item";
-              return `<button class="${cls} branch-focus-btn" type="button" data-branch-idx="${idx}"><strong>${escapeHtml(branch.name)}</strong><span class="muted">${escapeHtml(branch.address)}</span></button>`;
+              const reviews = (state.branchReviews || []).filter((review) => Number(review.branchId) === branch.id);
+              const avg = reviews.length
+                ? (reviews.reduce((sum, review) => sum + Number(review.rating || 0), 0) / reviews.length).toFixed(1)
+                : null;
+              return `<button class="${cls} branch-focus-btn" type="button" data-branch-idx="${idx}"><strong>${escapeHtml(branch.name)}</strong><span class="muted">${escapeHtml(branch.address)}</span>${avg ? `<span class="muted">${tr("branchRating")}: ${avg}/5</span>` : ""}</button>`;
             }).join("")}
           </div>
         </div>
@@ -544,7 +558,7 @@ function renderProductCard(product, tr) {
       </div>
       <div class="product-card__body">
         <div class="tag-row">
-          <span class="pill pill--small">${escapeHtml(product.category)}</span>
+          <span class="pill pill--small">${renderCategoryLabel(state.language, product.category)}</span>
           <span class="pill pill--small ${product.inStock ? 'pill--success' : 'pill--warning'}">${product.inStock ? tr("inStock") : tr("outOfStock")}</span>
         </div>
         <h3 class="product-card__name">${escapeHtml(product.name)}</h3>
@@ -576,13 +590,13 @@ function renderProductView(state, productId, cartSummary, tr) {
         </div>
         <div class="detail-card__content">
           <div class="tag-row">
-            <span class="pill">${escapeHtml(product.category)}</span>
+            <span class="pill">${renderCategoryLabel(state.language, product.category)}</span>
             <span class="pill">${product.inStock ? tr("inStock") : tr("outOfStock")}</span>
           </div>
           <div>
             <h1>${escapeHtml(product.name)}</h1>
             <p class="section__lead">
-              ${tr("category")}: ${escapeHtml(product.category)}<br />
+              ${tr("category")}: ${renderCategoryLabel(state.language, product.category)}<br />
               ${tr("unit")}: ${escapeHtml(product.unit)}
             </p>
           </div>
@@ -609,14 +623,15 @@ function renderCheckoutView(state, cartSummary, tr) {
   const checkoutFeedback = state.checkoutFeedback
     ? `<p class="auth-feedback auth-feedback--${state.checkoutFeedback.type}">${tr(`checkout_${state.checkoutFeedback.code}`)}</p>`
     : "";
-  const selectedPaymentMethod = checkoutPaymentMethodState || PAYMENT_METHODS[0];
+  const selectedPaymentMethod = checkoutPaymentMethodState || "momo";
   const paymentGuide = getCheckoutPaymentGuide(selectedPaymentMethod, tr);
   const lastOrder = state.lastOrder;
+  const depositAmount = Number(state.currentUser?.noShowFlags || 0) >= 2 ? PICKUP_DEPOSIT_RWF * 2 : PICKUP_DEPOSIT_RWF;
   return `
     <main class="checkout-layout">
       <section class="checkout-card">
         <h2>${tr("checkoutTitle")}</h2>
-        <p class="section__lead">${tr("checkoutLead")}</p>
+        <p class="section__lead">${tr("pickupLead")}</p>
         ${checkoutFeedback}
         ${
           state.orderComplete
@@ -629,6 +644,7 @@ function renderCheckoutView(state, cartSummary, tr) {
                     ? `
                       <div class="checkout-success-meta">
                         <div><strong>${escapeHtml(lastOrder.reference)}</strong></div>
+                        <div class="muted">${escapeHtml(lastOrder.pickupBranch?.name || "")} • ${escapeHtml(lastOrder.pickupTime || "")}</div>
                         <div class="muted">${escapeHtml(formatPaymentMethodLabel(lastOrder.paymentMethod, tr))} • ${escapeHtml(formatPaymentStatus(lastOrder.paymentStatus, tr))}</div>
                         <div class="muted">${escapeHtml(lastOrder.paymentReference || "")}</div>
                         ${
@@ -644,6 +660,11 @@ function renderCheckoutView(state, cartSummary, tr) {
               </div>
             `
             : `<form id="checkout-form">
+                <div class="summary-card" style="margin-bottom:1rem">
+                  <div class="summary-card__row"><span>${tr("pickupOnlyLabel")}</span><strong>${tr("pickupOnlyValue")}</strong></div>
+                  <div class="summary-card__row"><span>${tr("pickupDeposit")}</span><strong>${formatPrice(depositAmount)}</strong></div>
+                  <p class="notice">${tr("pickupDepositHint")}</p>
+                </div>
                 <div class="checkout-grid">
                   <label class="checkout-field">
                     <span>${tr("fullName")}</span>
@@ -660,13 +681,28 @@ function renderCheckoutView(state, cartSummary, tr) {
                     <input name="district" required />
                   </label>
                   <label class="checkout-field">
+                    <span>${tr("pickupBranch")}</span>
+                    <select name="branchId" required>
+                      <option value="">${tr("checkoutBranchPlaceholder")}</option>
+                      ${SIMBA_BRANCHES.map((branch) => `<option value="${branch.id}" ${nearestBranchState?.id === branch.id ? "selected" : ""}>${escapeHtml(branch.name)}</option>`).join("")}
+                    </select>
+                  </label>
+                </div>
+                <div class="checkout-grid">
+                  <label class="checkout-field">
+                    <span>${tr("pickupTime")}</span>
+                    <select name="pickupTime" required>
+                      <option value="">${tr("pickupTime")}</option>
+                      ${PICKUP_TIMES.map((slot) => `<option value="${escapeHtml(slot)}">${escapeHtml(slot)}</option>`).join("")}
+                    </select>
+                  </label>
+                  <label class="checkout-field">
                     <span>${tr("paymentMethod")}</span>
                     <select name="paymentMethod" id="payment-method">
-                      ${PAYMENT_METHODS.map((method) => {
+                      ${["momo", "card"].map((method) => {
                         const labelMap = {
                           momo: tr("paymentMomo"),
                           card: tr("paymentCard"),
-                          cash: tr("paymentCash"),
                         };
                         return `<option value="${method}" ${selectedPaymentMethod === method ? "selected" : ""}>${labelMap[method]}</option>`;
                       }).join("")}
@@ -693,7 +729,7 @@ function renderCheckoutView(state, cartSummary, tr) {
                 </div>
                 <label class="checkout-field">
                   <span>${tr("address")}</span>
-                  <textarea name="address" required></textarea>
+                  <textarea name="address"></textarea>
                 </label>
                 <label class="checkout-field">
                   <span>${tr("notes")}</span>
@@ -726,7 +762,7 @@ function renderCheckoutView(state, cartSummary, tr) {
             : `<p>${tr("emptyCartText")}</p>`
         }
         <div class="summary-card__row"><span>${tr("subtotal")}</span><strong>${formatPrice(cartSummary.subtotal)}</strong></div>
-        <div class="summary-card__row"><span>${tr("delivery")}</span><strong>${formatPrice(cartSummary.delivery)}</strong></div>
+        <div class="summary-card__row"><span>${tr("pickupDeposit")}</span><strong>${formatPrice(depositAmount)}</strong></div>
         <div class="summary-card__row summary-card__total"><span>${tr("total")}</span><strong>${formatPrice(cartSummary.total)}</strong></div>
         <p class="notice">${tr("momoHint")}</p>
       </aside>
@@ -812,6 +848,9 @@ function formatPaymentStatus(paymentStatus, tr) {
   const map = {
     awaiting_momo_confirmation: tr("paymentStatusMomoPending"),
     card_authorized: tr("paymentStatusCardAuthorized"),
+    deposit_pending: tr("paymentStatusMomoPending"),
+    deposit_authorized: tr("paymentStatusCardAuthorized"),
+    deposit_confirmed: tr("paymentStatusPending"),
     pay_on_delivery: tr("paymentStatusCash"),
     pending: tr("paymentStatusPending"),
   };
@@ -835,6 +874,19 @@ function getCheckoutPaymentGuide(paymentMethod, tr) {
     title: tr("paymentMomoGuideTitle"),
     description: tr("paymentMomoGuideText"),
   };
+}
+
+function seedAssistantConversation() {
+  const state = getState();
+  if (!state.isAuthenticated || state.currentUser?.role !== "customer") return;
+  if (Array.isArray(state.assistantMessages) && state.assistantMessages.length) return;
+  const name = escapeHtml(state.currentUser?.fullName?.split(" ")[0] || "");
+  const greeting = state.language === "rw"
+    ? `Muraho ${name}! Nshobora gufasha gushaka ibicuruzwa kuri Simba, gusobanura uburyo bwo guhaha, cyangwa gusubiza ibibazo byawe.`
+    : state.language === "fr"
+    ? `Bonjour ${name}\u00a0! Je peux vous aider \u00e0 trouver des produits Simba, expliquer comment fonctionne la boutique, ou r\u00e9pondre \u00e0 vos questions.`
+    : `Hi ${name}! I can help you find Simba products, explain how the shop works, or answer any questions you have.`;
+  setAssistantMessages([{ id: "seed", role: "assistant", text: greeting, products: [] }]);
 }
 
 function normalizeAssistantToken(value) {
@@ -905,7 +957,6 @@ async function buildAssistantReply(state, rawQuery, tr) {
   const query = normalizeAssistantToken(rawQuery);
   const intentCategories = inferAssistantCategories(query, getCategories(state.products));
 
-  // Score and pre-filter products by relevance before sending to AI
   const scored = state.products
     .filter((p) => p.inStock)
     .map((p) => ({ p, score: scoreAssistantProduct(p, query, intentCategories) }))
@@ -914,36 +965,39 @@ async function buildAssistantReply(state, rawQuery, tr) {
     .slice(0, 30)
     .map((e) => `- ${e.p.name} | ${e.p.category} | ${e.p.price} RWF`);
 
-  // If nothing scored, fall back to local reply immediately
-  if (scored.length === 0) return buildLocalAssistantReply(state, rawQuery, tr);
-
-  const systemPrompt = `You are a shopping assistant for Simba Supermarket in Kigali, Rwanda.
+  const systemPrompt = `You are a helpful assistant for Simba Supermarket in Kigali, Rwanda.
 Respond ONLY in ${langName}.
-You MUST only recommend products from the CATALOG below.
-NEVER suggest products not in the catalog.
-If the user asks for milk, ONLY suggest milk products from the catalog.
-If the user asks for bread, ONLY suggest bread products.
-Do NOT mix unrelated categories.
-Keep your reply to 1-2 sentences, then list up to 4 matching product names exactly as written in the catalog.
 
-CATALOG (pre-filtered for this query):
-${scored.join("\n")}`;
+You can help with TWO things:
+1. PRODUCT SEARCH: If the user asks for a product, ONLY recommend products from the CATALOG below. Never suggest products not in the catalog. Do not mix unrelated categories.
+2. SIMBA SYSTEM HELP: If the user asks how to order, pay, use MoMo, find branches, sign in, use the cart, checkout, or anything about how Simba works — answer clearly and helpfully.
+
+Keep replies to 2-3 sentences. For products, list up to 4 matching names from the catalog.
+
+SIMBA SYSTEM INFO:
+- Sign in or create an account to shop
+- Add products to cart, then go to checkout
+- Payment: small MoMo deposit for branch pick-up, with demo card fallback
+- Branches: ${SIMBA_BRANCHES.map((branch) => branch.name).join(", ")}
+- Support: hello@simba.rw | +250 788 123 456
+
+${scored.length > 0 ? `PRODUCT CATALOG (pre-filtered):\n${scored.join("\n")}` : ""}`;
 
   try {
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-       
+        
       },
       body: JSON.stringify({
-        model: "llama3-8b-8192",
+        model: "llama-3.3-70b-versatile",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: rawQuery },
         ],
-        max_tokens: 200,
-        temperature: 0.1,
+        max_tokens: 220,
+        temperature: 0.2,
       }),
     });
 
@@ -952,7 +1006,6 @@ ${scored.join("\n")}`;
     const text = data.choices?.[0]?.message?.content?.trim();
     if (!text) throw new Error("empty");
 
-    // Only show product chips that were in the pre-scored list
     const scoredProducts = scored.map((line) => {
       const name = line.replace(/^- /, "").split(" | ")[0];
       return state.products.find((p) => p.name === name);
@@ -962,7 +1015,7 @@ ${scored.join("\n")}`;
       text.toLowerCase().includes(p.name.toLowerCase().slice(0, 12))
     ).slice(0, 4);
 
-    return { text, products: mentioned.length ? mentioned : scoredProducts.slice(0, 3) };
+    return { text, products: mentioned.length ? mentioned : (scored.length > 0 ? scoredProducts.slice(0, 3) : []) };
   } catch (err) {
     console.error("Groq assistant error:", err.message);
     return buildLocalAssistantReply(state, rawQuery, tr);
@@ -1121,9 +1174,13 @@ function renderAccountView(state, cartSummary, tr) {
                                   <span>
                                     ${escapeHtml(order.reference)}
                                     <br />
-                                    <span class="muted">${new Date(order.createdAt).toLocaleString()} • ${escapeHtml(order.paymentStatus || "pending")}</span>
+                                    <span class="muted">${new Date(order.createdAt).toLocaleString()} • ${escapeHtml(order.status || "pending")}</span>
                                   </span>
                                   <strong>${formatPrice(order.totals?.total || 0)}</strong>
+                                </div>
+                                <div class="summary-card__row">
+                                  <span>${escapeHtml(order.pickupBranch?.name || "-")}</span>
+                                  <strong>${escapeHtml(order.pickupTime || "-")}</strong>
                                 </div>
                                 <div class="order-history-items">
                                   ${(order.items || [])
@@ -1144,6 +1201,32 @@ function renderAccountView(state, cartSummary, tr) {
                                   <span>${escapeHtml(formatPaymentMethodLabel(order.paymentMethod, tr))}</span>
                                   <strong>${escapeHtml(formatPaymentStatus(order.paymentStatus, tr))}</strong>
                                 </div>
+                                ${
+                                  order.status === "completed" && !order.branchReview
+                                    ? `
+                                      <form class="branch-review-form" data-order-id="${order.id}" data-branch-id="${order.pickupBranch?.id || ""}" data-branch-name="${escapeHtml(order.pickupBranch?.name || "")}">
+                                        <label class="checkout-field checkout-field--compact">
+                                          <span>${tr("branchRating")}</span>
+                                          <select name="rating" required>
+                                            <option value="">/5</option>
+                                            <option value="5">5</option>
+                                            <option value="4">4</option>
+                                            <option value="3">3</option>
+                                            <option value="2">2</option>
+                                            <option value="1">1</option>
+                                          </select>
+                                        </label>
+                                        <label class="checkout-field checkout-field--compact">
+                                          <span>${tr("branchReviewComment")}</span>
+                                          <input name="comment" placeholder="${tr("branchReviewLead")}" />
+                                        </label>
+                                        <button class="button button--primary button--sm" type="submit">${tr("branchReviewButton")}</button>
+                                      </form>
+                                    `
+                                    : order.branchReview
+                                      ? `<p class="muted">${tr("branchRating")}: ${escapeHtml(String(order.branchReview.rating || "-"))}/5</p>`
+                                      : ""
+                                }
                               </div>
                             `,
                           )
@@ -1209,8 +1292,123 @@ function renderAccountView(state, cartSummary, tr) {
   `;
 }
 
+function renderBranchOperationsView(state, tr) {
+  const currentBranchId = Number(state.currentUser?.branchId || 1);
+  const currentBranch = SIMBA_BRANCHES.find((branch) => branch.id === currentBranchId) || SIMBA_BRANCHES[0];
+  const branchOrders = state.orders
+    .filter((order) => Number(order.pickupBranch?.id) === currentBranchId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const myStaffOrders = state.currentUser?.role === "staff"
+    ? branchOrders.filter((order) => String(order.assignedStaffEmail || "").toLowerCase() === String(state.currentUser?.email || "").toLowerCase())
+    : branchOrders;
+  const inventoryProducts = state.products.slice(0, 18);
+  const staffOptions = state.users.filter((user) => user.role === "staff" && Number(user.branchId) === currentBranchId);
+
+  return `
+    <main class="section admin-layout">
+      <section class="section">
+        <div class="section__header">
+          <div>
+            <h2 class="section__title">${tr("branchOpsTitle")}</h2>
+            <p class="section__lead">${escapeHtml(currentBranch.name)} • ${tr("branchOpsLead")}</p>
+          </div>
+          <span class="pill">${escapeHtml(state.currentUser?.role || "")}</span>
+        </div>
+        ${state.adminFeedback ? `<p class="auth-feedback auth-feedback--${state.adminFeedback.type}">${tr(`admin_${state.adminFeedback.code}`)}</p>` : ""}
+        <div class="feature-grid">
+          <article class="feature-card"><h3>${tr("branchOrdersPending")}</h3><p>${branchOrders.filter((order) => order.status === "pending").length}</p></article>
+          <article class="feature-card"><h3>${tr("branchOrdersAssigned")}</h3><p>${branchOrders.filter((order) => order.status === "assigned").length}</p></article>
+          <article class="feature-card"><h3>${tr("branchOrdersReady")}</h3><p>${branchOrders.filter((order) => order.status === "ready").length}</p></article>
+          <article class="feature-card"><h3>${tr("branchOrdersCompleted")}</h3><p>${branchOrders.filter((order) => order.status === "completed").length}</p></article>
+        </div>
+      </section>
+      <section class="admin-grid">
+        <article class="summary-card">
+          <h3>${tr("branchOrdersPending")}</h3>
+          <div class="admin-activity-list">
+            ${
+              myStaffOrders.length
+                ? myStaffOrders.map((order) => `
+                    <div class="admin-order-card">
+                      <div class="admin-order-header">
+                        <div>
+                          <strong>${escapeHtml(order.customer.fullName)}</strong>
+                          <div class="admin-order-meta">${escapeHtml(order.reference)} • ${escapeHtml(order.status || "pending")}</div>
+                        </div>
+                        <strong class="admin-order-total">${formatPrice(order.totals?.total || 0)}</strong>
+                      </div>
+                      <div class="admin-order-details">
+                        <div class="admin-order-branch">${escapeHtml(order.pickupBranch?.name || "")}</div>
+                        <div class="admin-order-location">${escapeHtml(order.pickupTime || "")}</div>
+                        <div class="admin-order-address">${escapeHtml(order.customer.phone || "")}</div>
+                        ${order.assignedStaffName ? `<div class="admin-order-phone">${tr("branchAssignedTo")}: ${escapeHtml(order.assignedStaffName)}</div>` : ""}
+                      </div>
+                      <div class="detail-actions">
+                        ${
+                          state.currentUser?.role !== "staff" && order.status === "pending"
+                            ? `<button class="button button--primary button--sm" type="button" data-order-action="accept" data-order-id="${order.id}">${tr("branchAccept")}</button>`
+                            : ""
+                        }
+                        ${
+                          state.currentUser?.role !== "staff" && ["accepted", "pending"].includes(order.status)
+                            ? `
+                              <select class="branch-assign-select" data-order-id="${order.id}">
+                                <option value="">${tr("branchAssign")}</option>
+                                ${staffOptions.map((user) => `<option value="${escapeHtml(user.email)}">${escapeHtml(user.fullName)}</option>`).join("")}
+                              </select>
+                            `
+                            : ""
+                        }
+                        ${
+                          order.status === "assigned" && (
+                            state.currentUser?.role !== "staff" ||
+                            String(order.assignedStaffEmail || "").toLowerCase() === String(state.currentUser?.email || "").toLowerCase()
+                          )
+                            ? `<button class="button button--primary button--sm" type="button" data-order-action="ready" data-order-id="${order.id}">${tr("branchMarkReady")}</button>`
+                            : ""
+                        }
+                        ${
+                          order.status === "ready"
+                            ? `<button class="button button--primary button--sm" type="button" data-order-action="complete" data-order-id="${order.id}">${tr("branchComplete")}</button>`
+                            : ""
+                        }
+                      </div>
+                    </div>
+                  `).join("")
+                : `<p>${tr("noOrdersYet")}</p>`
+            }
+          </div>
+        </article>
+        <article class="summary-card">
+          <h3>${tr("branchInventoryTitle")}</h3>
+          <p class="muted">${tr("branchInventoryLead")}</p>
+          <div class="admin-product-list">
+            ${inventoryProducts.map((product) => `
+              <form class="branch-stock-form" data-product-id="${product.id}" data-branch-id="${currentBranchId}">
+                <div class="admin-product-list__head">
+                  <div class="admin-product-info">
+                    <strong class="admin-product-name">${escapeHtml(product.name)}</strong>
+                    <div class="admin-product-meta">${renderCategoryLabel(state.language, product.category)}</div>
+                  </div>
+                </div>
+                <div class="admin-price-form__fields">
+                  <label class="checkout-field checkout-field--compact">
+                    <span>${tr("branchStockCount")}</span>
+                    <input name="stock" type="number" min="0" step="1" value="${Number(product.branchStock?.[currentBranchId] || 0)}" required />
+                  </label>
+                  <button class="button button--primary button--sm" type="submit">${tr("branchUpdateStock")}</button>
+                </div>
+              </form>
+            `).join("")}
+          </div>
+        </article>
+      </section>
+    </main>
+  `;
+}
+
 function renderAdminView(state, filteredProducts, tr) {
-  if (!state.isAuthenticated || state.currentUser?.role !== "admin") {
+  if (!state.isAuthenticated || !["admin", "manager", "staff"].includes(state.currentUser?.role)) {
     return `
       <main class="auth-layout">
         <section class="auth-panel">
@@ -1222,6 +1420,10 @@ function renderAdminView(state, filteredProducts, tr) {
         </section>
       </main>
     `;
+  }
+
+  if (state.currentUser?.role === "manager" || state.currentUser?.role === "staff") {
+    return renderBranchOperationsView(state, tr);
   }
 
   const feedback = state.adminFeedback
@@ -1412,12 +1614,13 @@ function renderAdminView(state, filteredProducts, tr) {
                           <div class="admin-order-header">
                             <div>
                               <strong>${escapeHtml(order.customer.fullName)}</strong>
-                              <div class="admin-order-meta">${escapeHtml(order.reference)} • ${escapeHtml(order.paymentStatus)}</div>
+                              <div class="admin-order-meta">${escapeHtml(order.reference)} • ${escapeHtml(order.status || "pending")}</div>
                             </div>
                             <strong class="admin-order-total">${formatPrice(order.totals.total)}</strong>
                           </div>
                           <div class="admin-order-details">
-                            ${order.customer.nearestBranch ? `<div class="admin-order-branch">📍 ${escapeHtml(order.customer.nearestBranch.name)}</div>` : ""}
+                            ${order.pickupBranch ? `<div class="admin-order-branch">📍 ${escapeHtml(order.pickupBranch.name)}</div>` : ""}
+                            ${order.pickupTime ? `<div class="admin-order-location">🕒 ${escapeHtml(order.pickupTime)}</div>` : ""}
                             ${order.customer.location ? `<div class="admin-order-location">🌍 ${order.customer.location.lat.toFixed(4)}, ${order.customer.location.lng.toFixed(4)}</div>` : ""}
                             <div class="admin-order-address">📮 ${escapeHtml(order.customer.address || 'No address provided')}</div>
                             <div class="admin-order-phone">📞 ${escapeHtml(order.customer.phone || 'No phone provided')}</div>
@@ -1454,7 +1657,7 @@ function renderAdminProductEditor(product, tr) {
       <div class="admin-product-list__head">
         <div class="admin-product-info">
           <strong class="admin-product-name">${escapeHtml(product.name)}</strong>
-          <div class="admin-product-meta">${escapeHtml(product.category)} • ${escapeHtml(product.unit)}</div>
+          <div class="admin-product-meta">${renderCategoryLabel(getState().language, product.category)} • ${escapeHtml(product.unit)}</div>
         </div>
         <a class="button button--ghost button--sm" href="#/product/${product.id}">${tr("details")}</a>
       </div>
@@ -1543,6 +1746,7 @@ function renderAuthView(state, mode, tr) {
           <button class="button button--primary auth-submit" type="submit">${tr("authSignInButton")}</button>
           <button class="button button--ghost" id="google-login" type="button">${tr("authGoogle")}</button>
         </form>
+        <p class="muted" style="margin-top:0.75rem">${tr("demoAccountsBody")}</p>
         <p class="auth-switch">${tr("authNoAccount")} <a class="auth-inline-link" href="#/auth/signup">${tr("navSignUp")}</a></p>
       </section>
     </main>
@@ -1563,7 +1767,7 @@ function renderCart(state, cartSummary, tr) {
             : `<div class="empty-state"><h3>${tr("emptyCart")}</h3><p>${tr("emptyCartText")}</p></div>`
         }
         <div class="summary-card__row"><span>${tr("subtotal")}</span><strong>${formatPrice(cartSummary.subtotal)}</strong></div>
-        <div class="summary-card__row"><span>${tr("delivery")}</span><strong>${formatPrice(cartSummary.delivery)}</strong></div>
+        <div class="summary-card__row"><span>${tr("pickupDeposit")}</span><strong>${formatPrice(cartSummary.deposit)}</strong></div>
         <div class="summary-card__row summary-card__total"><span>${tr("total")}</span><strong>${formatPrice(cartSummary.total)}</strong></div>
         <div class="cart-actions">
           <a class="button button--primary" href="#/checkout">${tr("goCheckout")}</a>
@@ -1879,17 +2083,30 @@ function bindEvents(currentRoute) {
     const fullName = form.get("fullName");
     const phone = form.get("phone");
     const district = form.get("district");
+    const branchId = Number(form.get("branchId"));
+    const pickupTime = String(form.get("pickupTime") || "").trim();
     const address = form.get("address");
-    
-    if (!fullName || !phone || !district || !address) {
-      alert("Please fill in all required fields including delivery address.");
+
+    if (!fullName || !phone || !district) {
+      alert(t(getState().language, "checkoutCustomerDetailsRequired"));
       return;
     }
-    
+    if (!branchId) {
+      alert(t(getState().language, "checkoutBranchRequired"));
+      return;
+    }
+    if (!pickupTime) {
+      alert(t(getState().language, "checkoutPickupTimeRequired"));
+      return;
+    }
+
     const ok = await completeOrder({
       fullName,
       phone,
       district,
+      branchId,
+      pickupTime,
+      depositAmount: Number(getState().currentUser?.noShowFlags || 0) >= 2 ? PICKUP_DEPOSIT_RWF * 2 : PICKUP_DEPOSIT_RWF,
       paymentMethod: form.get("paymentMethod"),
       momoNumber: form.get("momoNumber"),
       cardholderName: form.get("cardholderName"),
@@ -1907,7 +2124,7 @@ function bindEvents(currentRoute) {
       })),
       totals: {
         subtotal: cartSummary.subtotal,
-        delivery: cartSummary.delivery,
+        deposit: cartSummary.deposit,
         total: cartSummary.total,
       },
     });
@@ -1925,6 +2142,7 @@ function bindEvents(currentRoute) {
     });
     if (ok) {
       const role = getState().currentUser?.role;
+      if (role === "customer") seedAssistantConversation();
       location.hash = role === "admin" ? "/admin" : "/";
     }
   });
@@ -1956,7 +2174,10 @@ function bindEvents(currentRoute) {
       email: form.get("email"),
       password,
     });
-    if (ok) location.hash = "/";
+    if (ok) {
+      seedAssistantConversation();
+      location.hash = "/";
+    }
   });
 
   document.querySelector("#reset-form")?.addEventListener("submit", async (event) => {
@@ -2048,6 +2269,45 @@ function bindEvents(currentRoute) {
     }),
   );
 
+  document.querySelectorAll(".branch-stock-form").forEach((formElement) =>
+    formElement.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      await updateInventory({
+        productId: Number(event.currentTarget.dataset.productId),
+        branchId: Number(event.currentTarget.dataset.branchId),
+        stock: form.get("stock"),
+      });
+    }),
+  );
+
+  document.querySelectorAll("[data-order-action]").forEach((button) =>
+    button.addEventListener("click", async () => {
+      const current = getState().currentUser;
+      await updateOrderWorkflow({
+        orderId: Number(button.dataset.orderId),
+        action: button.dataset.orderAction,
+        actorName: current?.fullName || "Simba Team",
+        actorEmail: current?.email || "",
+      });
+    }),
+  );
+
+  document.querySelectorAll(".branch-assign-select").forEach((select) =>
+    select.addEventListener("change", async (event) => {
+      const targetEmail = String(event.currentTarget.value || "").toLowerCase();
+      if (!targetEmail) return;
+      const state = getState();
+      const targetUser = state.users.find((user) => String(user.email || "").toLowerCase() === targetEmail);
+      await updateOrderWorkflow({
+        orderId: Number(event.currentTarget.dataset.orderId),
+        action: "assign",
+        actorName: targetUser?.fullName || targetEmail,
+        actorEmail: targetEmail,
+      });
+    }),
+  );
+
   document.querySelectorAll(".admin-reply-form").forEach((formElement) =>
     formElement.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -2125,6 +2385,26 @@ function bindEvents(currentRoute) {
           }
         });
       });
+    }),
+  );
+
+  document.querySelectorAll(".branch-review-form").forEach((formElement) =>
+    formElement.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      const current = getState().currentUser;
+      const ok = await saveBranchReview({
+        orderId: Number(event.currentTarget.dataset.orderId),
+        branchId: Number(event.currentTarget.dataset.branchId),
+        branchName: event.currentTarget.dataset.branchName,
+        customerEmail: current?.email || "",
+        customerName: current?.fullName || "",
+        rating: form.get("rating"),
+        comment: form.get("comment"),
+      });
+      if (ok) {
+        event.currentTarget.reset();
+      }
     }),
   );
 

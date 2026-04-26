@@ -7,10 +7,13 @@ import {
   registerUser,
   resetUserPassword,
   submitSupportMessage,
+  submitBranchReview,
+  updateBranchInventory,
+  updateOrderStatus,
   updateUserLocation,
   updateUserProfile,
 } from "./backend.js";
-import { DEFAULT_FILTERS, STORAGE_KEYS } from "./constants.js";
+import { DEFAULT_FILTERS, SIMBA_BRANCHES, STORAGE_KEYS } from "./constants.js";
 import { formatPrice } from "./utils.js";
 import { t } from "./i18n.js";
 
@@ -31,6 +34,7 @@ const state = {
   isAuthenticated: session.isAuthenticated,
   orders: session.orders,
   messages: session.messages,
+  branchReviews: session.branchReviews || [],
   customerNotificationFeed: readStorage(STORAGE_KEYS.customerNotificationFeed, []),
   assistantMessages: readStorage(STORAGE_KEYS.assistantMessages, [
     {
@@ -87,6 +91,26 @@ function appendCustomerNotification(payload) {
 
 function syncProductSnapshot(products) {
   persist(STORAGE_KEYS.productSnapshot, products);
+}
+
+function normalizeProductInventory(product) {
+  const seededBranchStock = Object.fromEntries(
+    SIMBA_BRANCHES.map((branch, index) => [branch.id, 6 + ((index * 3) % 9)]),
+  );
+  const branchStock = Object.fromEntries(
+    SIMBA_BRANCHES.map((branch) => {
+      const raw = product.branchStock?.[branch.id];
+      return [
+        branch.id,
+        Number.isFinite(Number(raw)) ? Math.max(0, Math.floor(Number(raw))) : seededBranchStock[branch.id],
+      ];
+    }),
+  );
+  return {
+    ...product,
+    branchStock,
+    inStock: Object.values(branchStock).some((count) => count > 0),
+  };
 }
 
 function recordRemovedProductNotifications(previousProducts, currentProducts) {
@@ -183,7 +207,9 @@ function emit() {
 export function initializeStore(payload) {
   const previousSnapshot = readStorage(STORAGE_KEYS.productSnapshot, []);
   const storedProducts = readStorage(STORAGE_KEYS.products, null);
-  state.products = Array.isArray(storedProducts) && storedProducts.length ? storedProducts : payload.products;
+  state.products = (Array.isArray(storedProducts) && storedProducts.length ? storedProducts : payload.products).map(
+    normalizeProductInventory,
+  );
   if (!storedProducts) {
     persist(STORAGE_KEYS.products, state.products);
   }
@@ -476,6 +502,9 @@ export async function completeOrder(payload) {
   }
 
   state.orders = result.orders;
+  if (Array.isArray(result.products)) {
+    state.products = result.products;
+  }
   if (Array.isArray(result.users)) {
     state.users = result.users;
     const currentUserEmail = String(state.currentUser?.email || "").toLowerCase();
@@ -501,6 +530,46 @@ export async function completeOrder(payload) {
   persist(STORAGE_KEYS.cart, state.cart);
   emit();
   return true;
+}
+
+export async function updateOrderWorkflow(payload) {
+  const result = await updateOrderStatus(payload);
+  state.adminFeedback = { type: result.ok ? "success" : "error", code: result.code };
+  if (result.ok) {
+    state.orders = result.orders;
+    if (Array.isArray(result.users)) {
+      state.users = result.users;
+      const currentUserEmail = String(state.currentUser?.email || "").toLowerCase();
+      const refreshedUser = result.users.find((entry) => String(entry.email || "").toLowerCase() === currentUserEmail);
+      if (refreshedUser) {
+        state.currentUser = refreshedUser;
+        persist(STORAGE_KEYS.currentUser, refreshedUser);
+      }
+    }
+  }
+  emit();
+  return result.ok;
+}
+
+export async function updateInventory(payload) {
+  const result = await updateBranchInventory(payload);
+  state.adminFeedback = { type: result.ok ? "success" : "error", code: result.code };
+  if (result.ok) {
+    state.products = result.products;
+  }
+  emit();
+  return result.ok;
+}
+
+export async function saveBranchReview(payload) {
+  const result = await submitBranchReview(payload);
+  state.adminFeedback = { type: result.ok ? "success" : "error", code: result.code };
+  if (result.ok) {
+    state.branchReviews = result.reviews;
+    state.orders = result.orders;
+  }
+  emit();
+  return result.ok;
 }
 
 export function saveProduct(payload) {
@@ -568,6 +637,7 @@ export function saveProduct(payload) {
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/(^-|-$)/g, ""),
+      branchStock: Object.fromEntries(SIMBA_BRANCHES.map((branch, index) => [branch.id, 6 + ((index * 3) % 9)])),
       createdAt,
       addedByAdmin: true,
     });

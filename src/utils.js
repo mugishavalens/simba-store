@@ -1,3 +1,5 @@
+import { PICKUP_DEPOSIT_RWF } from "./constants.js";
+
 export function formatPrice(value) {
   return new Intl.NumberFormat("en-RW", {
     style: "currency",
@@ -53,12 +55,12 @@ export function summarizeCart(products, cart) {
     .filter(Boolean);
 
   const subtotal = detailed.reduce((sum, item) => sum + item.lineTotal, 0);
-  const delivery = subtotal > 0 ? 2500 : 0;
+  const deposit = subtotal > 0 ? PICKUP_DEPOSIT_RWF : 0;
   return {
     items: detailed,
     subtotal,
-    delivery,
-    total: subtotal + delivery,
+    deposit,
+    total: subtotal + deposit,
     count: detailed.reduce((sum, item) => sum + item.quantity, 0),
   };
 }
