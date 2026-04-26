@@ -2064,6 +2064,14 @@ function bindEvents(currentRoute) {
       const email = btn.dataset.customerEmail || "";
       adminOpenCustomerEmail = adminOpenCustomerEmail === email ? "" : email;
       render();
+      loadLeaflet(() => {
+        requestAnimationFrame(() => {
+          mountAdminOrdersMap(adminOpenCustomerEmail || null);
+          if (adminOpenCustomerEmail) {
+            document.getElementById("admin-orders-map")?.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        });
+      });
     }),
   );
 
@@ -2669,6 +2677,66 @@ function mountBranchesMap(mapEl) {
   }
 }
 
+function mountAdminCustomerMap(customer) {
+  const mapId = `admin-customer-map-${customer.email.replace(/[^a-z0-9]/gi, '-')}`;
+  const mapEl = document.getElementById(mapId);
+  if (!mapEl || !window.L) return;
+  if (mapEl._leaflet_id) { mapEl._leaflet_id = null; mapEl.innerHTML = ''; }
+
+  const state = getState();
+  const customerOrders = state.orders.filter(
+    (o) => String(o.customer?.email || "").toLowerCase() === customer.email.toLowerCase()
+  );
+
+  const L = window.L;
+  const map = L.map(mapEl).setView([-1.9441, 30.0619], 11);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 19,
+  }).addTo(map);
+
+  SIMBA_BRANCHES.forEach((branch) => {
+    L.marker([branch.lat, branch.lng], { icon: makeIcon("#f57c00", 12) })
+      .addTo(map)
+      .bindPopup(`<strong>${branch.name}</strong><br><span style="color:#666;font-size:12px">${branch.address}</span>`);
+  });
+
+  const bounds = [];
+  customerOrders.forEach((order) => {
+    const loc = resolveOrderMapLocation(order);
+    if (!loc) return;
+    const customerLatLng = [loc.lat, loc.lng];
+    bounds.push(customerLatLng);
+    L.marker(customerLatLng, { icon: makeIcon("#13806d", 14) })
+      .addTo(map)
+      .bindPopup(`
+        <div style="min-width:180px">
+          <strong>${order.customer.fullName}</strong><br>
+          <span style="color:#666;font-size:12px">${order.reference}</span><br>
+          ${order.customer.address ? `<span style="color:#666;font-size:12px">📮 ${order.customer.address}</span><br>` : ""}
+        </div>
+      `);
+    const nb = loc.branch ? (SIMBA_BRANCHES.find((b) => b.id === loc.branch.id) || loc.branch) : null;
+    if (nb) {
+      const branchLatLng = [nb.lat, nb.lng];
+      L.polyline([customerLatLng, branchLatLng], { color: "#13806d", weight: 2, dashArray: "5 5", opacity: 0.7 }).addTo(map);
+      const dist = haversineDistance(loc.lat, loc.lng, nb.lat, nb.lng);
+      const mid = [(customerLatLng[0] + branchLatLng[0]) / 2, (customerLatLng[1] + branchLatLng[1]) / 2];
+      L.marker(mid, {
+        icon: L.divIcon({
+          className: "",
+          html: `<div style="background:#13806d;color:#fff;padding:2px 6px;border-radius:999px;font-size:10px;font-weight:700;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,.3)">${dist.toFixed(1)} km</div>`,
+          iconAnchor: [25, 10],
+        }),
+      }).addTo(map);
+    }
+  });
+
+  if (bounds.length) {
+    map.fitBounds(bounds, { padding: [40, 40] });
+  }
+}
+
 function mountAdminCustomersMap() {
   const mapEl = document.getElementById("admin-customers-map");
   if (!mapEl || !window.L) return;
@@ -2718,12 +2786,25 @@ function mountAdminCustomersMap() {
   }
 }
 
-function mountAdminOrdersMap() {
+function mountAdminOrdersMap(filterEmail) {
   const mapEl = document.getElementById("admin-orders-map");
   if (!mapEl || !window.L) return;
   const L = window.L;
   const state = getState();
-  const ordersWithLocation = state.orders
+
+  // When filtering by customer, also try matching by name in case email isn't on the order
+  let allOrders = state.orders;
+  if (filterEmail) {
+    const matchedUser = state.users.find((u) => u.email.toLowerCase() === filterEmail.toLowerCase());
+    allOrders = state.orders.filter((o) => {
+      const orderEmail = String(o.customer?.email || "").toLowerCase();
+      if (orderEmail === filterEmail.toLowerCase()) return true;
+      if (matchedUser && String(o.customer?.fullName || "").trim().toLowerCase() === String(matchedUser.fullName || "").trim().toLowerCase()) return true;
+      return false;
+    });
+  }
+
+  const ordersWithLocation = allOrders
     .map((order) => ({ order, resolvedLocation: resolveOrderMapLocation(order) }))
     .filter((entry) => Boolean(entry.resolvedLocation));
   
