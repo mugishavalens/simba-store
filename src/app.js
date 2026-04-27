@@ -198,17 +198,34 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
         <nav class="main-nav ${navOpen ? "main-nav--open" : ""}" id="main-nav" aria-label="Primary">
           <a class="main-nav__link" href="#/" data-home-link="true">${tr("navHome")}</a>
           ${
-            isAdmin
-              ? `
-                <a class="main-nav__link" href="#/admin" data-admin-nav-target="customers-panel">${tr("adminManageCustomers")}</a>
-                <a class="main-nav__link" href="#/admin" data-admin-nav-target="products-panel">${tr("navProducts")}</a>
-              `
-              : `
-                <a class="main-nav__link" href="#branches">${tr("navBranches")}</a>
-                <a class="main-nav__link" href="#support">${tr("navSupport")}</a>
-                <a class="main-nav__link" href="#about">${tr("navAbout")}</a>
-                <a class="main-nav__link" href="#vision">${tr("navVision")}</a>
-              `
+            isAdmin && state.currentUser?.role === "admin"
+              ? [
+                  { id: "overview", key: "adminTabOverview" },
+                  { id: "products", key: "adminTabProducts" },
+                  { id: "suppliers", key: "adminTabSuppliers" },
+                  { id: "promotions", key: "adminTabPromotions" },
+                  { id: "reports", key: "adminTabReports" },
+                  { id: "customers", key: "adminTabCustomers" },
+                  { id: "orders", key: "adminTabOrders" },
+                ]
+                  .map(
+                    (entry) => `
+                      <a class="main-nav__link ${state.adminTab === entry.id ? "main-nav__link--active" : ""}"
+                         href="#/admin"
+                         data-admin-tab="${entry.id}">${tr(entry.key)}</a>
+                    `,
+                  )
+                  .join("")
+              : isAdmin
+                ? `
+                  <a class="main-nav__link" href="#/admin">${tr("adminDashboard")}</a>
+                `
+                : `
+                  <a class="main-nav__link" href="#branches">${tr("navBranches")}</a>
+                  <a class="main-nav__link" href="#support">${tr("navSupport")}</a>
+                  <a class="main-nav__link" href="#about">${tr("navAbout")}</a>
+                  <a class="main-nav__link" href="#vision">${tr("navVision")}</a>
+                `
           }
         </nav>
         <div class="topbar__actions">
