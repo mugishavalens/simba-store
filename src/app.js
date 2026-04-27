@@ -3325,7 +3325,7 @@ function isGoogleConfigured() {
 }
 
 function getGoogleRedirectUri() {
-  return `${window.location.origin}${window.location.pathname}?google-auth=1`;
+  return window.location.origin + "/index.html";
 }
 
 function startGoogleRedirect() {
@@ -3353,12 +3353,11 @@ function startGoogleRedirect() {
 }
 
 async function handleGoogleAuthCallback() {
-  const isGoogleCallback = window.location.search.includes("google-auth=1");
-  if (!isGoogleCallback) return;
-
   const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-  const googleError = hashParams.get("error");
   const idToken = hashParams.get("id_token");
+  const googleError = hashParams.get("error");
+  if (!idToken && !googleError) return;
+
   const nonce = sessionStorage.getItem(STORAGE_KEYS.googleNonce) || "";
   const expectedState = sessionStorage.getItem(STORAGE_KEYS.googleState) || "";
   const returnedState = hashParams.get("state") || "";
