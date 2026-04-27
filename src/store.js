@@ -292,6 +292,30 @@ export function clearAdminFeedback() {
   emit();
 }
 
+export function setGroqKey(rawKey) {
+  if (state.currentUser?.role !== "admin") {
+    state.adminFeedback = { type: "error", code: "accessDenied" };
+    emit();
+    return false;
+  }
+  const key = String(rawKey || "").trim();
+  try {
+    if (key) {
+      localStorage.setItem("simba.groq-api-key", key);
+      state.adminFeedback = { type: "success", code: "groqKeySaved" };
+    } else {
+      localStorage.removeItem("simba.groq-api-key");
+      state.adminFeedback = { type: "success", code: "groqKeyCleared" };
+    }
+  } catch (err) {
+    state.adminFeedback = { type: "error", code: "saveFailed" };
+    emit();
+    return false;
+  }
+  emit();
+  return true;
+}
+
 export function setAdminTab(tab) {
   const allowed = ["overview", "products", "suppliers", "promotions", "reports", "customers", "orders"];
   if (!allowed.includes(tab)) return;

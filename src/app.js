@@ -36,6 +36,7 @@ import {
   sendSupportMessage,
   setAdminTab,
   setFilter,
+  setGroqKey,
   setAuthFeedback,
   setLanguage,
   setSearch,
@@ -1558,6 +1559,8 @@ function renderAdminOverviewTab(state, customers, adminNotifications, tr) {
     const days = Math.ceil((new Date(p.expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
     return days >= 0 && days <= EXPIRY_ALERT_DAYS;
   });
+  const groqKey = (typeof localStorage !== "undefined" ? localStorage.getItem("simba.groq-api-key") : "") || "";
+  const groqOn = Boolean(groqKey);
   return `
     <div class="feature-grid">
       <article class="feature-card"><h3>${tr("statProducts")}</h3><p>${state.products.length}</p></article>
@@ -1567,6 +1570,20 @@ function renderAdminOverviewTab(state, customers, adminNotifications, tr) {
       <article class="feature-card ${lowStock.length ? "feature-card--warn" : ""}"><h3>${tr("alertLowStock")}</h3><p>${lowStock.length}</p></article>
       <article class="feature-card ${expiring.length ? "feature-card--warn" : ""}"><h3>${tr("alertExpiringSoon")}</h3><p>${expiring.length}</p></article>
     </div>
+    <article class="summary-card" style="margin-top:1.25rem">
+      <h3>${tr("groqKeyTitle")} <span class="badge ${groqOn ? "badge--ok" : "badge--warn"}">${groqOn ? tr("groqKeyStatusOn") : tr("groqKeyStatusOff")}</span></h3>
+      <p class="muted">${tr("groqKeyHint")}</p>
+      <form id="admin-groq-form" class="auth-form admin-form" style="max-width:520px">
+        <label class="checkout-field">
+          <span>${tr("groqKeyTitle")}</span>
+          <input id="admin-groq-key" name="key" type="password" placeholder="${tr("groqKeyPlaceholder")}" value="${escapeHtml(groqKey)}" autocomplete="off" />
+        </label>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+          <button class="button button--primary" type="submit">${tr("groqKeySave")}</button>
+          <button class="button button--ghost" type="button" id="admin-groq-clear">${tr("groqKeyClear")}</button>
+        </div>
+      </form>
+    </article>
     <div class="admin-grid">
       <article class="summary-card">
         <h3>${tr("adminTabCustomers")}</h3>
@@ -2575,6 +2592,18 @@ function bindEvents(currentRoute) {
   document.querySelectorAll("[data-promotion-delete]").forEach((btn) =>
     btn.addEventListener("click", () => deletePromotion(btn.dataset.promotionDelete)),
   );
+
+  document.querySelector("#admin-groq-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const input = event.currentTarget.querySelector("#admin-groq-key");
+    setGroqKey(input?.value || "");
+  });
+
+  document.querySelector("#admin-groq-clear")?.addEventListener("click", () => {
+    const input = document.querySelector("#admin-groq-key");
+    if (input) input.value = "";
+    setGroqKey("");
+  });
 
   document.querySelectorAll(".branch-stock-form").forEach((formElement) =>
     formElement.addEventListener("submit", async (event) => {
