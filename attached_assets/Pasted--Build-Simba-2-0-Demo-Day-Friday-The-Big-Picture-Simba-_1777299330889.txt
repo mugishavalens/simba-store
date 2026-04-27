@@ -1,0 +1,151 @@
+🛒 Build Simba 2.0
+Demo Day: Friday
+The Big Picture
+Simba is Rwanda’s one of largest supermarket chains. You’re not just rebuilding a website, you’re building the digital face of a trusted local brand. Every pixel, every interaction, every broken feature reflects on Simba’s reputation. If it doesn’t work, don’t ship it. Fewer features that work perfectly beat many features that are broken.
+
+1. Landing Page: Your First and Only First Impression
+Most of you jumped straight to product listings. That’s a mistake.
+The landing page is the most important page you have. A user who lands on your site for the first time decides whether to trust you within 3 seconds. What should they feel? “This is Simba. I know this brand. I can trust it.”
+Your landing page must answer these questions instantly:
+What is this? (Simba Supermarket, Rwanda’s #1 supermarket)
+Why should I use this? (Fast delivery / pick-up in Kigali)
+How do I start? (One clear CTA, “Start Shopping” or “Order Now”)
+
+
+What a great landing page includes:
+Hero section with a strong headline and a single call-to-action
+Brief value props (e.g. “45-min delivery”, “Fresh products”, “MoMo payment”)
+Featured categories or top products, give users a reason to scroll
+Trust signals (Simba brand, branch locations, real product count)
+
+
+Look at Instacart, Jumia, Glovo, and Getir for reference. Notice how they guide you in 3 seconds.
+
+
+2. Multi-Language: Go Deep, Not Wide
+Kinyarwanda and French are not optional. Rwanda is a trilingual country. Your language switcher means nothing if only 20% of the UI is translated.
+Checklist:
+All navigation items translated
+All product category names translated
+Checkout flow (every label, every button, every error message) translated
+Empty states and error messages translated (“No products found”, “Out of stock”)
+Language persists across page navigation
+Use Groq (free) if you need help generating translations. The API is fast and the free tier handles demo volume easily.
+3. Auth: Make It Work, Make It Easy
+Most of your login flows are broken. This is a hard blocker, if users can’t log in, nothing else matters.
+Requirements:
+Email/password login must work end-to-end
+Google OAuth is strongly recommended, it’s 1 button and users trust it
+Forgot password must be implemented, use email reset link (Resend API is free)
+Show clear error messages (not generic “Something went wrong”)
+Stay logged in across page refreshes (persist token)
+If you’re using NextAuth, Supabase Auth, or Firebase Auth, great, lean on them fully.
+4. Conversational Search: Your GenAI Differentiator
+Instead of a traditional search bar, implement conversational product search powered by Groq.
+A user types: “Do you have fresh milk?” or “I need something for breakfast” and the AI returns relevant products from your catalog.
+How to implement (it’s simpler than you think):
+Take the user’s message
+Send it to Groq’s API (llama-3.3-70b-versatile, free tier) with your product catalog as context
+
+
+Return matched products with a short natural-language response
+Groq free tier handles this easily for demo volume. This is a huge UX differentiator, no other team will have this. It takes one afternoon to build.
+5. Pick-Up First: Then Delivery
+The primary flow for demo day is pick-up, not delivery.
+Here’s how it works:
+User browses and adds items to cart
+User selects a Kigali branch for pick-up + a pick-up time
+User pays a small MoMo deposit at checkout (to prevent no-shows)
+Order is sent to the branch immediately, staff start preparing
+User arrives, picks up their order
+Why pick-up first? It’s simpler to demo, logistics are clearer, and it maps to how Simba actually operates.
+Real Kigali Simba branches to use (use these exact locations in your app):
+Simba Supermarket Remera
+Simba Supermarket Kimironko
+Simba Supermarket Kacyiru
+Simba Supermarket Nyamirambo
+Simba Supermarket Gikondo
+Simba Supermarket Kanombe
+Simba Supermarket Kinyinya
+Simba Supermarket Kibagabaga
+Simba Supermarket Nyanza
+Show these on a map or in a branch selector. Real names = real credibility.
+6. MoMo Deposit: Protect the Branch Staff’s Time
+When an order is placed for pick-up, charge a small non-refundable deposit via MoMo (e.g. 500-1000 RWF).
+Why: A customer says “I’ll be there in 20 minutes” and never comes. Staff packed the order for nothing. This deposit prevents that behavior.
+For demo: you don’t need real MoMo integration, a mock payment screen that simulates the flow is fine. The important thing is the UX: “Your order requires a 500 RWF deposit to confirm.”
+7. Branch Operations: Order Flow
+Once an order is placed, this is the backend flow:
+Custom
+er places order
+↓
+Order appears in Branch Dashboard (pending)
+↓
+Branch Manager accepts order + assigns to staff member
+↓
+Staff member sees their assigned orders + starts preparing
+↓
+Order marked “Ready for Pick-up”
+↓
+Customer picks up
+Two roles to implement:
+Branch Manager: sees all orders, assigns them to staff
+
+
+Branch Staff: sees their assigned orders, marks them ready
+
+
+This is a separate dashboard from the customer-facing site. Keep it simple, a list of pending orders with assign/complete buttons is enough for demo day.
+8. Inventory: Branch-Level Stock
+Each branch has its own stock. All branches can start with the same product catalog from the Simba dataset, but stock is tracked per branch.
+Minimum implementation for demo:
+Each product has a stock count per branch
+When an order is placed, stock decreases at that branch
+Branch staff can update stock (“Mark out of stock”)
+You don’t need a complex replenishment system for demo. Just show that ordering from Remera doesn’t affect Kimironko’s stock.
+9. Reviews: Two Directions
+Customer reviews branches:
+After a successful pick-up, customer can rate the experience (1-5 stars) and leave a comment
+Branch rating is visible on the branch selector page
+
+
+Branch reviews customers:
+After an order is completed, branch staff can flag a customer (e.g. “Did not show up”)
+A customer with multiple no-show flags gets a higher deposit requirement
+
+
+For demo: implement customer to branch reviews. Branch to customer flag is a bonus.
+
+Demo Day Checklist: Friday
+Your demo will be evaluated on:
+Area
+What we expect
+Landing page
+Strong hero, clear CTA, trust signals
+Multi-language
+EN + RW (French is bonus) fully translated
+Auth
+Login, register, forgot password all work
+Search
+Conversational (Groq) or excellent keyword search
+Pick-up flow
+Browse to Cart to Branch select to MoMo deposit to Confirmation
+Branch dashboard
+Manager assigns order to staff
+Inventory
+Per-branch stock, decreases on order
+Reviews
+Customer can review a branch
+
+Quality over quantity. A product where everything works is better than one where 10 features are half-broken.
+Quick Wins for Today
+If you’re behind, here’s what to prioritize in order:
+Fix your login flow, nothing works without auth
+Build a proper landing page
+Implement the pick-up checkout flow end-to-end
+Add Kinyarwanda and French translations to everywhere
+Add Groq conversational search
+
+
+Good luck. Build something you’re proud of.
+
