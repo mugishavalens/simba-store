@@ -16,7 +16,14 @@ export const STORAGE_KEYS = {
   productSnapshot: "simba.product-snapshot.v1",
   assistantMessages: "simba.assistant-messages.v1",
   branchReviews: "simba.branch-reviews.v1",
+  suppliers: "simba.suppliers.v1",
+  promotions: "simba.promotions.v1",
+  adminTab: "simba.admin-tab.v1",
 };
+
+export const VAT_RATE = 0.18;
+export const DEFAULT_MIN_STOCK = 5;
+export const EXPIRY_ALERT_DAYS = 30;
 
 export const GOOGLE_CLIENT_ID = "258086530526-78tsu8svfh76n6l999qe17ihvoc3q8vl.apps.googleusercontent.com";
 

@@ -13,7 +13,7 @@ import {
   updateUserLocation,
   updateUserProfile,
 } from "./backend.js";
-import { DEFAULT_FILTERS, SIMBA_BRANCHES, STORAGE_KEYS } from "./constants.js";
+import { DEFAULT_FILTERS, DEFAULT_MIN_STOCK, SIMBA_BRANCHES, STORAGE_KEYS } from "./constants.js";
 import { formatPrice } from "./utils.js";
 import { t } from "./i18n.js";
 
@@ -35,6 +35,12 @@ const state = {
   orders: session.orders,
   messages: session.messages,
   branchReviews: session.branchReviews || [],
+  suppliers: readStorage(STORAGE_KEYS.suppliers, [
+    { id: 1, name: "Inyange Industries", contact: "Sales Office", phone: "+250 788 100 200", email: "sales@inyange.rw", notes: "Dairy & juices" },
+    { id: 2, name: "Bralirwa", contact: "Distribution", phone: "+250 788 300 400", email: "orders@bralirwa.rw", notes: "Beverages" },
+  ]),
+  promotions: readStorage(STORAGE_KEYS.promotions, []),
+  adminTab: readStorage(STORAGE_KEYS.adminTab, "overview"),
   customerNotificationFeed: readStorage(STORAGE_KEYS.customerNotificationFeed, []),
   assistantMessages: readStorage(STORAGE_KEYS.assistantMessages, [
     {
@@ -284,6 +290,88 @@ export function clearAdminFeedback() {
   if (!state.adminFeedback) return;
   state.adminFeedback = null;
   emit();
+}
+
+export function setAdminTab(tab) {
+  const allowed = ["overview", "products", "suppliers", "promotions", "reports", "customers", "orders"];
+  if (!allowed.includes(tab)) return;
+  state.adminTab = tab;
+  persist(STORAGE_KEYS.adminTab, tab);
+  emit();
+}
+
+export function saveSupplier(payload) {
+  if (state.currentUser?.role !== "admin") {
+    state.adminFeedback = { type: "error", code: "accessDenied" };
+    emit();
+    return false;
+  }
+  const name = String(payload.name || "").trim();
+  if (!name) {
+    state.adminFeedback = { type: "error", code: "invalidPrice" };
+    emit();
+    return false;
+  }
+  const next = {
+    id: payload.id ? Number(payload.id) : Date.now(),
+    name,
+    contact: String(payload.contact || "").trim(),
+    phone: String(payload.phone || "").trim(),
+    email: String(payload.email || "").trim(),
+    notes: String(payload.notes || "").trim(),
+  };
+  const idx = state.suppliers.findIndex((s) => Number(s.id) === Number(next.id));
+  if (idx >= 0) state.suppliers[idx] = next;
+  else state.suppliers = [next, ...state.suppliers];
+  persist(STORAGE_KEYS.suppliers, state.suppliers);
+  state.adminFeedback = { type: "success", code: "supplierSaved" };
+  emit();
+  return true;
+}
+
+export function deleteSupplier(id) {
+  if (state.currentUser?.role !== "admin") return false;
+  state.suppliers = state.suppliers.filter((s) => Number(s.id) !== Number(id));
+  persist(STORAGE_KEYS.suppliers, state.suppliers);
+  state.adminFeedback = { type: "success", code: "supplierDeleted" };
+  emit();
+  return true;
+}
+
+export function savePromotion(payload) {
+  if (state.currentUser?.role !== "admin") {
+    state.adminFeedback = { type: "error", code: "accessDenied" };
+    emit();
+    return false;
+  }
+  const productId = Number(payload.productId);
+  const percent = Number(payload.percent);
+  if (!productId || !Number.isFinite(percent) || percent <= 0 || percent > 90) {
+    state.adminFeedback = { type: "error", code: "invalidPrice" };
+    emit();
+    return false;
+  }
+  const promo = {
+    id: payload.id ? Number(payload.id) : Date.now(),
+    productId,
+    percent,
+    endDate: String(payload.endDate || "").trim() || null,
+    createdAt: new Date().toISOString(),
+  };
+  state.promotions = [promo, ...state.promotions.filter((p) => Number(p.productId) !== productId)];
+  persist(STORAGE_KEYS.promotions, state.promotions);
+  state.adminFeedback = { type: "success", code: "promotionSaved" };
+  emit();
+  return true;
+}
+
+export function deletePromotion(id) {
+  if (state.currentUser?.role !== "admin") return false;
+  state.promotions = state.promotions.filter((p) => Number(p.id) !== Number(id));
+  persist(STORAGE_KEYS.promotions, state.promotions);
+  state.adminFeedback = { type: "success", code: "promotionDeleted" };
+  emit();
+  return true;
 }
 
 export function signOut() {
@@ -599,6 +687,11 @@ export function saveProduct(payload) {
       price: nextPrice,
       inStock: nextStock,
       image: String(payload.image || "").trim() || existingProduct.image,
+      sku: payload.sku !== undefined ? String(payload.sku || "").trim() : existingProduct.sku || "",
+      barcode: payload.barcode !== undefined ? String(payload.barcode || "").trim() : existingProduct.barcode || "",
+      supplierId: payload.supplierId !== undefined ? (payload.supplierId ? Number(payload.supplierId) : null) : existingProduct.supplierId ?? null,
+      expiryDate: payload.expiryDate !== undefined ? (String(payload.expiryDate || "").trim() || null) : existingProduct.expiryDate || null,
+      minStock: payload.minStock !== undefined ? Math.max(0, Number(payload.minStock) || 0) : Number(existingProduct.minStock) || DEFAULT_MIN_STOCK,
       updatedAt: changedAt,
       previousPrice: priceChanged ? currentPrice : state.products[existingIndex].previousPrice,
       priceChangedAt: priceChanged ? changedAt : state.products[existingIndex].priceChangedAt,
@@ -638,6 +731,11 @@ export function saveProduct(payload) {
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/(^-|-$)/g, ""),
       branchStock: Object.fromEntries(SIMBA_BRANCHES.map((branch, index) => [branch.id, 6 + ((index * 3) % 9)])),
+      sku: String(payload.sku || "").trim(),
+      barcode: String(payload.barcode || "").trim(),
+      supplierId: payload.supplierId ? Number(payload.supplierId) : null,
+      expiryDate: String(payload.expiryDate || "").trim() || null,
+      minStock: Math.max(0, Number(payload.minStock) || DEFAULT_MIN_STOCK),
       createdAt,
       addedByAdmin: true,
     });

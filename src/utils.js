@@ -1,4 +1,34 @@
-import { PICKUP_DEPOSIT_RWF } from "./constants.js";
+import { PICKUP_DEPOSIT_RWF, VAT_RATE } from "./constants.js";
+
+export function getActivePromotion(productId, promotions) {
+  if (!Array.isArray(promotions) || !promotions.length) return null;
+  const now = Date.now();
+  return (
+    promotions.find((promo) => {
+      if (!promo || Number(promo.productId) !== Number(productId)) return false;
+      const percent = Number(promo.percent);
+      if (!Number.isFinite(percent) || percent <= 0 || percent > 90) return false;
+      if (promo.endDate) {
+        const ends = new Date(promo.endDate).getTime();
+        if (Number.isFinite(ends) && ends < now) return false;
+      }
+      return true;
+    }) || null
+  );
+}
+
+export function getEffectivePrice(product, promotions) {
+  if (!product) return 0;
+  const promo = getActivePromotion(product.id, promotions);
+  const base = Number(product.price) || 0;
+  if (!promo) return base;
+  return Math.max(0, Math.round(base * (1 - Number(promo.percent) / 100)));
+}
+
+export function computeVAT(amount) {
+  const a = Number(amount) || 0;
+  return Math.round(a - a / (1 + VAT_RATE));
+}
 
 export function formatPrice(value) {
   return new Intl.NumberFormat("en-RW", {
@@ -41,25 +71,37 @@ export function applyFilters(products, search, filters) {
   return next;
 }
 
-export function summarizeCart(products, cart) {
+export function summarizeCart(products, cart, promotions = []) {
   const detailed = cart
     .map((item) => {
       const product = products.find((entry) => entry.id === item.productId);
       if (!product) return null;
+      const promo = getActivePromotion(product.id, promotions);
+      const unitPrice = promo
+        ? Math.max(0, Math.round(Number(product.price) * (1 - Number(promo.percent) / 100)))
+        : Number(product.price) || 0;
+      const baseLine = (Number(product.price) || 0) * item.quantity;
+      const lineTotal = unitPrice * item.quantity;
       return {
         ...item,
         product,
-        lineTotal: product.price * item.quantity,
+        unitPrice,
+        promotion: promo || null,
+        lineTotal,
+        savings: Math.max(0, baseLine - lineTotal),
       };
     })
     .filter(Boolean);
 
   const subtotal = detailed.reduce((sum, item) => sum + item.lineTotal, 0);
+  const savings = detailed.reduce((sum, item) => sum + item.savings, 0);
   const deposit = subtotal > 0 ? PICKUP_DEPOSIT_RWF : 0;
   return {
     items: detailed,
     subtotal,
+    savings,
     deposit,
+    vat: computeVAT(subtotal),
     total: subtotal + deposit,
     count: detailed.reduce((sum, item) => sum + item.quantity, 0),
   };

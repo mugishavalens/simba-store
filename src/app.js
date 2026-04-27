@@ -19,6 +19,8 @@ import {
   clearCheckoutFeedback,
   clearContactFeedback,
   completeOrder,
+  deletePromotion,
+  deleteSupplier,
   getState,
   initializeStore,
   loginAccount,
@@ -27,9 +29,12 @@ import {
   removeFromCart,
   resetPassword,
   saveProduct,
+  savePromotion,
+  saveSupplier,
   saveBranchReview,
   sendSupportReply,
   sendSupportMessage,
+  setAdminTab,
   setFilter,
   setAuthFeedback,
   setLanguage,
@@ -45,7 +50,8 @@ import {
   updateOrderWorkflow,
   updateQuantity,
 } from "./store.js";
-import { applyFilters, formatPrice, getCategories, route, summarizeCart } from "./utils.js";
+import { DEFAULT_MIN_STOCK, EXPIRY_ALERT_DAYS, VAT_RATE } from "./constants.js";
+import { applyFilters, formatPrice, getActivePromotion, getCategories, getEffectivePrice, route, summarizeCart } from "./utils.js";
 import { translateCategory } from "./i18n.js";
 
 const BRAND_LOGO = "./assets/simba-logo.jpg";
@@ -116,7 +122,7 @@ function render() {
   const currentRoute = route();
   const categories = getCategories(state.products);
   const filteredProducts = applyFilters(state.products, state.search, state.filters);
-  const cartSummary = summarizeCart(state.products, state.cart);
+  const cartSummary = summarizeCart(state.products, state.cart, state.promotions || []);
   const tr = (key) => t(state.language, key);
 
   let view = "";
@@ -576,9 +582,14 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
 
 function renderProductCard(product, tr) {
   const state = getState();
+  const promo = getActivePromotion(product.id, state.promotions || []);
+  const effective = promo
+    ? Math.max(0, Math.round(Number(product.price) * (1 - Number(promo.percent) / 100)))
+    : Number(product.price);
   return `
     <article class="product-card">
       <div class="product-card__media">
+        ${promo ? `<span class="promo-badge">-${Number(promo.percent)}${tr("promotionBadge")}</span>` : ""}
         <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy" />
       </div>
       <div class="product-card__body">
@@ -589,7 +600,10 @@ function renderProductCard(product, tr) {
         <h3 class="product-card__name">${escapeHtml(product.name)}</h3>
         <div class="product-card__meta">
           <span class="product-meta">${tr("unit")}: ${escapeHtml(product.unit)}</span>
-          <strong class="product-card__price">${formatPrice(product.price)}</strong>
+          <span class="product-card__price-group">
+            ${promo ? `<span class="product-card__price-was">${formatPrice(product.price)}</span>` : ""}
+            <strong class="product-card__price">${formatPrice(effective)}</strong>
+          </span>
         </div>
         <div class="product-card__actions">
           <a class="button button--ghost button--sm" href="#/product/${product.id}">${tr("details")}</a>
@@ -1460,10 +1474,29 @@ function renderAdminView(state, filteredProducts, tr) {
   const visibleProducts = filteredProducts.slice(0, 24);
   const customers = state.users.filter((user) => user.role === "customer");
   const recentOrders = state.orders.slice(0, 8);
-  const recentMessages = (state.messages || []).slice(0, 12);
   const adminNotifications = getAdminNotifications(state, tr);
   const customerNotificationCount = adminNotifications.customerMessages.length;
   const productNotificationCount = adminNotifications.productUpdates.length;
+  const activeTab = state.adminTab || "overview";
+  const tabs = [
+    { id: "overview", label: tr("adminTabOverview") },
+    { id: "products", label: tr("adminTabProducts") },
+    { id: "suppliers", label: tr("adminTabSuppliers") },
+    { id: "promotions", label: tr("adminTabPromotions") },
+    { id: "reports", label: tr("adminTabReports") },
+    { id: "customers", label: tr("adminTabCustomers") },
+    { id: "orders", label: tr("adminTabOrders") },
+  ];
+
+  const tabContent = (() => {
+    if (activeTab === "products") return renderAdminProductsTab(state, visibleProducts, tr);
+    if (activeTab === "suppliers") return renderAdminSuppliersTab(state, tr);
+    if (activeTab === "promotions") return renderAdminPromotionsTab(state, tr);
+    if (activeTab === "reports") return renderAdminReportsTab(state, tr);
+    if (activeTab === "customers") return renderAdminCustomersTab(state, customers, tr);
+    if (activeTab === "orders") return renderAdminOrdersTab(state, recentOrders, tr);
+    return renderAdminOverviewTab(state, customers, adminNotifications, tr);
+  })();
 
   return `
     <main class="section admin-layout">
@@ -1473,235 +1506,413 @@ function renderAdminView(state, filteredProducts, tr) {
             <h2 class="section__title">${tr("adminDashboard")}</h2>
             <p class="section__lead">${tr("adminDashboardLead")}</p>
           </div>
-          <span class="pill">${visibleProducts.length} ${tr("filterResults")}</span>
+          <span class="pill">${state.products.length} ${tr("statProducts")}</span>
         </div>
         ${feedback}
-        <div class="admin-subnav">
-          <button class="button button--ghost admin-notification-toggle" type="button" data-admin-notification-type="customers" data-admin-nav-target="customers-panel">
-            ${tr("adminManageCustomers")}
-            ${customerNotificationCount > 0 ? `<span class="notification-count">${customerNotificationCount}</span>` : ""}
-          </button>
-          <button class="button button--ghost admin-notification-toggle" type="button" data-admin-notification-type="products" data-admin-nav-target="products-panel">
-            ${tr("navProducts")}
-            ${productNotificationCount > 0 ? `<span class="notification-count">${productNotificationCount}</span>` : ""}
-          </button>
-          <a class="button button--ghost" href="#/admin" data-admin-nav-target="customers-panel">${tr("adminOpenCustomersPanel")}</a>
-          <a class="button button--ghost" href="#/admin" data-admin-nav-target="products-panel">${tr("adminOpenProductsPanel")}</a>
+        <div class="admin-tabs" role="tablist">
+          ${tabs.map((tab) => `
+            <button type="button" role="tab"
+              class="admin-tab ${activeTab === tab.id ? "admin-tab--active" : ""}"
+              data-admin-tab="${tab.id}">
+              ${escapeHtml(tab.label)}
+              ${tab.id === "customers" && customerNotificationCount ? `<span class="notification-count">${customerNotificationCount}</span>` : ""}
+              ${tab.id === "products" && productNotificationCount ? `<span class="notification-count">${productNotificationCount}</span>` : ""}
+            </button>
+          `).join("")}
         </div>
-        ${
-          adminCustomersNotificationsOpen
-            ? `
-              <div class="admin-notification-list">
-                ${
-                  adminNotifications.customerMessages.length
-                    ? adminNotifications.customerMessages
-                        .map(
-                          (entry) => `
-                            <button class="admin-notification-item" type="button" data-admin-notification-target="admin-message-${entry.id}" data-admin-nav-target="customers-panel">
-                              <strong>${escapeHtml(entry.title)}</strong>
-                              <span>${escapeHtml(entry.text)}</span>
-                            </button>
-                          `,
-                        )
-                        .join("")
-                    : `<p class="muted">${tr("adminNoNewCustomerMessages")}</p>`
-                }
-              </div>
-            `
-            : ""
-        }
-        ${
-          adminProductsNotificationsOpen
-            ? `
-              <div class="admin-notification-list">
-                ${
-                  adminNotifications.productUpdates.length
-                    ? adminNotifications.productUpdates
-                        .map(
-                          (entry) => `
-                            <button class="admin-notification-item" type="button" data-admin-notification-target="admin-product-${entry.id}" data-admin-nav-target="products-panel">
-                              <strong>${escapeHtml(entry.title)}</strong>
-                              <span>${escapeHtml(entry.text)}</span>
-                            </button>
-                          `,
-                        )
-                        .join("")
-                    : `<p class="muted">${tr("adminNoNewProductUpdates")}</p>`
-                }
-              </div>
-            `
-            : ""
-        }
-        <div class="feature-grid">
-          <article class="feature-card">
-            <h3>${tr("statProducts")}</h3>
-            <p>${state.products.length}</p>
-          </article>
-          <article class="feature-card">
-            <h3>${tr("cart")}</h3>
-            <p>${state.cart.length}</p>
-          </article>
-          <article class="feature-card">
-            <h3>${tr("authEmail")}</h3>
-            <p>${escapeHtml(state.currentUser.email)}</p>
-          </article>
-          <article class="feature-card">
-            <h3>${tr("adminCustomersCount")}</h3>
-            <p>${customers.length}</p>
-          </article>
-        </div>
-      </section>
-      <section class="admin-grid" id="products-panel">
-        <article class="summary-card">
-          <h3>${tr("addProduct")}</h3>
-          <form id="admin-product-form" class="auth-form admin-form">
-            <label class="checkout-field"><span>${tr("productName")}</span><input name="name" required /></label>
-            <label class="checkout-field"><span>${tr("category")}</span><input name="category" required /></label>
-            <label class="checkout-field"><span>${tr("unit")}</span><input name="unit" value="Pcs" required /></label>
-            <label class="checkout-field"><span>${tr("priceLabel")}</span><input name="price" type="number" min="0" step="1" required /></label>
-            <label class="checkout-field"><span>${tr("imageUrl")}</span><input name="image" type="url" placeholder="https://..." /></label>
-            <label class="auth-remember"><input name="inStock" type="checkbox" checked /> <span>${tr("inStock")}</span></label>
-            <button class="button button--primary" type="submit">${tr("saveProductButton")}</button>
-          </form>
-        </article>
-        <article class="summary-card">
-          <h3>${tr("editPrices")}</h3>
-          <div class="admin-product-list">
-            ${visibleProducts.map((product) => renderAdminProductEditor(product, tr)).join("")}
-          </div>
-        </article>
-      </section>
-      <section class="admin-grid" id="customers-panel">
-        <article class="summary-card">
-          <h3>${tr("adminManageCustomers")}</h3>
-          <div class="admin-activity-list">
-            ${
-              customers.length
-                ? customers.map((customer) => {
-                    const isOpen = adminOpenCustomerEmail === customer.email;
-                    const customerMsgs = (state.messages || []).filter(
-                      (m) => String(m.email || "").toLowerCase() === customer.email.toLowerCase()
-                    ).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-                    return `
-                      <div class="admin-customer-row">
-                        <button class="admin-customer-toggle" type="button" data-customer-email="${escapeHtml(customer.email)}">
-                          <span>
-                            <strong>${escapeHtml(customer.fullName || "-")}</strong>
-                            <span class="muted">${escapeHtml(customer.email)}</span>
-                          </span>
-                          <span>
-                            <span class="pill">${customerMsgs.length}</span>
-                          </span>
-                        </button>
-                        ${isOpen ? `
-                          <div class="admin-customer-chat">
-                            <div class="admin-customer-chat__messages">
-                              ${customerMsgs.length ? customerMsgs.map((msg) => `
-                                <div class="admin-message-card" id="admin-message-${msg.id}">
-                                  <div class="admin-message-card__head">
-                                    <strong>${escapeHtml(msg.fullName)}</strong>
-                                    <span class="muted">${new Date(msg.createdAt).toLocaleString()}</span>
-                                  </div>
-                                  <p>${escapeHtml(msg.message)}</p>
-                                  <div class="admin-replies">
-                                    ${(Array.isArray(msg.replies) ? msg.replies : []).map((reply) => `
-                                      <div class="admin-reply-item">
-                                        <strong>${reply.by === "Admin" ? tr("authRoleAdmin") : escapeHtml(reply.by)}</strong>
-                                        <span class="muted">${new Date(reply.createdAt).toLocaleString()}</span>
-                                        <p>${escapeHtml(reply.text)}</p>
-                                      </div>
-                                    `).join("")}
-                                  </div>
-                                  <form class="admin-reply-form" data-message-id="${msg.id}">
-                                    <div class="customer-chat-input-row">
-                                      <input name="reply" placeholder="${tr("adminReplyPlaceholder")}" required autocomplete="off" />
-                                      <button class="button button--accent" type="submit">${tr("adminReplySend")}</button>
-                                    </div>
-                                  </form>
-                                </div>
-                              `).join("") : `<p class="muted">${tr("adminNoMessages")}</p>`}
-                            </div>
-                          </div>
-                        ` : ""}
-                      </div>
-                    `;
-                  }).join("")
-                : `<p>${tr("adminNoCustomers")}</p>`
-            }
-          </div>
-        </article>
-        <article class="summary-card">
-          <h3>${tr("adminOrdersMap")}</h3>
-          <div class="admin-activity-list">
-            ${
-              recentOrders.length
-                ? recentOrders
-                    .map(
-                      (order) => `
-                        <div class="admin-order-card">
-                          <div class="admin-order-header">
-                            <div>
-                              <strong>${escapeHtml(order.customer.fullName)}</strong>
-                              <div class="admin-order-meta">${escapeHtml(order.reference)} • ${escapeHtml(order.status || "pending")}</div>
-                            </div>
-                            <strong class="admin-order-total">${formatPrice(order.totals.total)}</strong>
-                          </div>
-                          <div class="admin-order-details">
-                            ${order.pickupBranch ? `<div class="admin-order-branch">📍 ${escapeHtml(order.pickupBranch.name)}</div>` : ""}
-                            ${order.pickupTime ? `<div class="admin-order-location">🕒 ${escapeHtml(order.pickupTime)}</div>` : ""}
-                            ${order.customer.location ? `<div class="admin-order-location">🌍 ${order.customer.location.lat.toFixed(4)}, ${order.customer.location.lng.toFixed(4)}</div>` : ""}
-                            <div class="admin-order-address">📮 ${escapeHtml(order.customer.address || tr("noAddressProvided"))}</div>
-                            <div class="admin-order-phone">📞 ${escapeHtml(order.customer.phone || tr("noPhoneProvided"))}</div>
-                          </div>
-                        </div>
-                      `,
-                    )
-                    .join("")
-                : `<div class="empty-orders-state">
-                    <p>${tr("noOrdersYet")}</p>
-                    <p class="muted">${tr("adminOrdersMapHint")}</p>
-                  </div>`
-            }
-          </div>
-          <div class="admin-orders-map-container">
-            <div id="admin-orders-map" class="branches-map admin-orders-map"></div>
-            ${
-              recentOrders.length === 0
-                ? `<div class="map-overlay">${tr("adminOrdersMapEmpty")}</div>`
-                : recentOrders.some((order) => resolveOrderMapLocation(order))
-                  ? ""
-                  : `<div class="map-overlay">${tr("adminOrdersMapHint")}</div>`
-            }
-          </div>
-        </article>
+        ${tabContent}
       </section>
     </main>
   `;
 }
 
-function renderAdminProductEditor(product, tr) {
+function renderAdminOverviewTab(state, customers, adminNotifications, tr) {
+  const totalRevenue = (state.orders || []).reduce((sum, o) => sum + Number(o.totals?.total || 0), 0);
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const todaysOrders = (state.orders || []).filter((o) => String(o.createdAt || "").slice(0, 10) === todayKey);
+  const todaysRevenue = todaysOrders.reduce((sum, o) => sum + Number(o.totals?.total || 0), 0);
+  const lowStock = (state.products || []).filter((p) => {
+    const min = Number(p.minStock) || DEFAULT_MIN_STOCK;
+    const stock = Object.values(p.branchStock || {}).reduce((a, b) => a + Number(b || 0), 0);
+    return p.inStock && stock <= min;
+  });
+  const expiring = (state.products || []).filter((p) => {
+    if (!p.expiryDate) return false;
+    const days = Math.ceil((new Date(p.expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    return days >= 0 && days <= EXPIRY_ALERT_DAYS;
+  });
+  return `
+    <div class="feature-grid">
+      <article class="feature-card"><h3>${tr("statProducts")}</h3><p>${state.products.length}</p></article>
+      <article class="feature-card"><h3>${tr("adminCustomersCount")}</h3><p>${customers.length}</p></article>
+      <article class="feature-card"><h3>${tr("reportTodayRevenue")}</h3><p>${formatPrice(todaysRevenue)}</p></article>
+      <article class="feature-card"><h3>${tr("reportTotalRevenue")}</h3><p>${formatPrice(totalRevenue)}</p></article>
+      <article class="feature-card ${lowStock.length ? "feature-card--warn" : ""}"><h3>${tr("alertLowStock")}</h3><p>${lowStock.length}</p></article>
+      <article class="feature-card ${expiring.length ? "feature-card--warn" : ""}"><h3>${tr("alertExpiringSoon")}</h3><p>${expiring.length}</p></article>
+    </div>
+    <div class="admin-grid">
+      <article class="summary-card">
+        <h3>${tr("adminTabCustomers")}</h3>
+        ${
+          adminNotifications.customerMessages.length
+            ? `<div class="admin-notification-list">${adminNotifications.customerMessages.slice(0, 5).map((entry) => `
+                <button class="admin-notification-item" type="button" data-admin-tab="customers">
+                  <strong>${escapeHtml(entry.title)}</strong>
+                  <span>${escapeHtml(entry.text)}</span>
+                </button>`).join("")}</div>`
+            : `<p class="muted">${tr("adminNoNewCustomerMessages")}</p>`
+        }
+      </article>
+      <article class="summary-card">
+        <h3>${tr("adminTabProducts")}</h3>
+        ${
+          adminNotifications.productUpdates.length
+            ? `<div class="admin-notification-list">${adminNotifications.productUpdates.slice(0, 5).map((entry) => `
+                <button class="admin-notification-item" type="button" data-admin-tab="products">
+                  <strong>${escapeHtml(entry.title)}</strong>
+                  <span>${escapeHtml(entry.text)}</span>
+                </button>`).join("")}</div>`
+            : `<p class="muted">${tr("adminNoNewProductUpdates")}</p>`
+        }
+      </article>
+    </div>
+  `;
+}
+
+function renderAdminProductsTab(state, visibleProducts, tr) {
+  const supplierOptions = (state.suppliers || [])
+    .map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`)
+    .join("");
+  return `
+    <div class="admin-grid">
+      <article class="summary-card">
+        <h3>${tr("addProduct")}</h3>
+        <form id="admin-product-form" class="auth-form admin-form">
+          <label class="checkout-field"><span>${tr("productName")}</span><input name="name" required /></label>
+          <label class="checkout-field"><span>${tr("category")}</span><input name="category" required /></label>
+          <label class="checkout-field"><span>${tr("unit")}</span><input name="unit" value="Pcs" required /></label>
+          <label class="checkout-field"><span>${tr("priceLabel")}</span><input name="price" type="number" min="0" step="1" required /></label>
+          <label class="checkout-field"><span>${tr("productSku")}</span><input name="sku" /></label>
+          <label class="checkout-field"><span>${tr("productBarcode")}</span><input name="barcode" /></label>
+          <label class="checkout-field"><span>${tr("productSupplier")}</span>
+            <select name="supplierId"><option value="">—</option>${supplierOptions}</select>
+          </label>
+          <label class="checkout-field"><span>${tr("productExpiry")}</span><input name="expiryDate" type="date" /></label>
+          <label class="checkout-field"><span>${tr("productMinStock")}</span><input name="minStock" type="number" min="0" step="1" value="${DEFAULT_MIN_STOCK}" /></label>
+          <label class="checkout-field"><span>${tr("imageUrl")}</span><input name="image" type="url" placeholder="https://..." /></label>
+          <label class="auth-remember"><input name="inStock" type="checkbox" checked /> <span>${tr("inStock")}</span></label>
+          <button class="button button--primary" type="submit">${tr("saveProductButton")}</button>
+        </form>
+      </article>
+      <article class="summary-card">
+        <h3>${tr("editPrices")}</h3>
+        <div class="admin-product-list">
+          ${visibleProducts.map((product) => renderAdminProductEditor(product, state, tr)).join("")}
+        </div>
+      </article>
+    </div>
+  `;
+}
+
+function renderAdminProductEditor(product, state, tr) {
+  const supplierOptions = (state.suppliers || [])
+    .map((s) => `<option value="${s.id}" ${Number(product.supplierId) === Number(s.id) ? "selected" : ""}>${escapeHtml(s.name)}</option>`)
+    .join("");
   return `
     <form class="admin-price-form" id="admin-product-${product.id}" data-product-id="${product.id}">
       <div class="admin-product-list__head">
         <div class="admin-product-info">
           <strong class="admin-product-name">${escapeHtml(product.name)}</strong>
-          <div class="admin-product-meta">${renderCategoryLabel(getState().language, product.category)} • ${escapeHtml(product.unit)}</div>
+          <div class="admin-product-meta">${renderCategoryLabel(state.language, product.category)} • ${escapeHtml(product.unit)}${product.sku ? ` • SKU ${escapeHtml(product.sku)}` : ""}</div>
         </div>
         <a class="button button--ghost button--sm" href="#/product/${product.id}">${tr("details")}</a>
       </div>
       <div class="admin-price-form__fields">
-        <label class="checkout-field checkout-field--compact">
-          <span>${tr("priceLabel")}</span>
-          <input name="price" type="number" min="0" step="1" value="${Number(product.price)}" required />
+        <label class="checkout-field checkout-field--compact"><span>${tr("priceLabel")}</span><input name="price" type="number" min="0" step="1" value="${Number(product.price)}" required /></label>
+        <label class="checkout-field checkout-field--compact"><span>${tr("productSku")}</span><input name="sku" value="${escapeHtml(product.sku || "")}" /></label>
+        <label class="checkout-field checkout-field--compact"><span>${tr("productBarcode")}</span><input name="barcode" value="${escapeHtml(product.barcode || "")}" /></label>
+        <label class="checkout-field checkout-field--compact"><span>${tr("productSupplier")}</span>
+          <select name="supplierId"><option value="">—</option>${supplierOptions}</select>
         </label>
-        <label class="checkout-field checkout-field--compact">
-          <span>${tr("imageUrl")}</span>
-          <input name="image" type="url" value="${escapeHtml(product.image || '')}" placeholder="https://..." />
-        </label>
+        <label class="checkout-field checkout-field--compact"><span>${tr("productExpiry")}</span><input name="expiryDate" type="date" value="${escapeHtml(product.expiryDate || "")}" /></label>
+        <label class="checkout-field checkout-field--compact"><span>${tr("productMinStock")}</span><input name="minStock" type="number" min="0" step="1" value="${Number(product.minStock) || DEFAULT_MIN_STOCK}" /></label>
+        <label class="checkout-field checkout-field--compact"><span>${tr("imageUrl")}</span><input name="image" type="url" value="${escapeHtml(product.image || '')}" placeholder="https://..." /></label>
         <label class="auth-remember"><input name="inStock" type="checkbox" ${product.inStock ? "checked" : ""} /> <span>${tr("inStock")}</span></label>
         <button class="button button--primary button--sm" type="submit">${tr("updatePrice")}</button>
       </div>
     </form>
+  `;
+}
+
+function renderAdminSuppliersTab(state, tr) {
+  const suppliers = state.suppliers || [];
+  return `
+    <div class="admin-grid">
+      <article class="summary-card">
+        <h3>${tr("supplierAdd")}</h3>
+        <form id="admin-supplier-form" class="auth-form admin-form">
+          <input type="hidden" name="id" />
+          <label class="checkout-field"><span>${tr("supplierName")}</span><input name="name" required /></label>
+          <label class="checkout-field"><span>${tr("supplierContact")}</span><input name="contact" /></label>
+          <label class="checkout-field"><span>${tr("supplierPhone")}</span><input name="phone" /></label>
+          <label class="checkout-field"><span>${tr("supplierEmail")}</span><input name="email" type="email" /></label>
+          <label class="checkout-field"><span>${tr("supplierNotes")}</span><textarea name="notes" rows="2"></textarea></label>
+          <button class="button button--primary" type="submit">${tr("supplierSave")}</button>
+        </form>
+      </article>
+      <article class="summary-card">
+        <h3>${tr("adminTabSuppliers")}</h3>
+        ${suppliers.length ? `
+          <table class="admin-table">
+            <thead><tr>
+              <th>${tr("supplierName")}</th><th>${tr("supplierContact")}</th><th>${tr("supplierPhone")}</th><th>${tr("supplierEmail")}</th><th></th>
+            </tr></thead>
+            <tbody>
+              ${suppliers.map((s) => `
+                <tr>
+                  <td><strong>${escapeHtml(s.name)}</strong>${s.notes ? `<div class="muted">${escapeHtml(s.notes)}</div>` : ""}</td>
+                  <td>${escapeHtml(s.contact || "—")}</td>
+                  <td>${escapeHtml(s.phone || "—")}</td>
+                  <td>${escapeHtml(s.email || "—")}</td>
+                  <td><button class="button button--ghost button--sm" type="button" data-supplier-delete="${s.id}">${tr("supplierDelete")}</button></td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        ` : `<p class="muted">${tr("supplierEmpty")}</p>`}
+      </article>
+    </div>
+  `;
+}
+
+function renderAdminPromotionsTab(state, tr) {
+  const productOptions = (state.products || [])
+    .slice(0, 200)
+    .map((p) => `<option value="${p.id}">${escapeHtml(p.name)} — ${formatPrice(p.price)}</option>`)
+    .join("");
+  const promotions = state.promotions || [];
+  return `
+    <div class="admin-grid">
+      <article class="summary-card">
+        <h3>${tr("promotionAdd")}</h3>
+        <form id="admin-promotion-form" class="auth-form admin-form">
+          <label class="checkout-field"><span>${tr("promotionProduct")}</span>
+            <select name="productId" required><option value="">—</option>${productOptions}</select>
+          </label>
+          <label class="checkout-field"><span>${tr("promotionPercent")}</span><input name="percent" type="number" min="1" max="90" step="1" required /></label>
+          <label class="checkout-field"><span>${tr("promotionEnds")}</span><input name="endDate" type="date" /></label>
+          <button class="button button--primary" type="submit">${tr("promotionSave")}</button>
+        </form>
+      </article>
+      <article class="summary-card">
+        <h3>${tr("promotionActive")}</h3>
+        ${promotions.length ? `
+          <table class="admin-table">
+            <thead><tr><th>${tr("productName")}</th><th>${tr("promotionPercent")}</th><th>${tr("promotionEnds")}</th><th></th></tr></thead>
+            <tbody>
+              ${promotions.map((promo) => {
+                const prod = (state.products || []).find((p) => Number(p.id) === Number(promo.productId));
+                const effective = prod ? Math.round(Number(prod.price) * (1 - Number(promo.percent) / 100)) : 0;
+                return `
+                  <tr>
+                    <td>${prod ? escapeHtml(prod.name) : `#${promo.productId}`}${prod ? `<div class="muted">${formatPrice(prod.price)} → <strong>${formatPrice(effective)}</strong></div>` : ""}</td>
+                    <td><span class="promo-badge promo-badge--inline">-${Number(promo.percent)}%</span></td>
+                    <td>${promo.endDate ? escapeHtml(promo.endDate) : "—"}</td>
+                    <td><button class="button button--ghost button--sm" type="button" data-promotion-delete="${promo.id}">${tr("promotionDelete")}</button></td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        ` : `<p class="muted">${tr("promotionEmpty")}</p>`}
+      </article>
+    </div>
+  `;
+}
+
+function renderAdminReportsTab(state, tr) {
+  const orders = state.orders || [];
+  const total = orders.reduce((s, o) => s + Number(o.totals?.total || 0), 0);
+  const subtotal = orders.reduce((s, o) => s + Number(o.totals?.subtotal || o.totals?.total || 0), 0);
+  const vat = Math.round(subtotal * VAT_RATE);
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const todaysOrders = orders.filter((o) => String(o.createdAt || "").slice(0, 10) === todayKey);
+  const todaysRevenue = todaysOrders.reduce((s, o) => s + Number(o.totals?.total || 0), 0);
+  const avgOrder = orders.length ? Math.round(total / orders.length) : 0;
+
+  const byCategory = new Map();
+  orders.forEach((o) => {
+    (o.items || []).forEach((it) => {
+      const product = (state.products || []).find((p) => Number(p.id) === Number(it.id || it.productId));
+      const cat = product ? product.category : "Other";
+      const line = Number(it.price || 0) * Number(it.quantity || 0);
+      byCategory.set(cat, (byCategory.get(cat) || 0) + line);
+    });
+  });
+  const catEntries = Array.from(byCategory.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const maxCat = catEntries.reduce((m, [, v]) => Math.max(m, v), 0) || 1;
+
+  const lowStock = (state.products || []).filter((p) => {
+    const min = Number(p.minStock) || DEFAULT_MIN_STOCK;
+    const stock = Object.values(p.branchStock || {}).reduce((a, b) => a + Number(b || 0), 0);
+    return p.inStock && stock <= min;
+  });
+  const expiring = (state.products || []).filter((p) => {
+    if (!p.expiryDate) return false;
+    const days = Math.ceil((new Date(p.expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    return days >= 0 && days <= EXPIRY_ALERT_DAYS;
+  });
+
+  return `
+    <div class="feature-grid">
+      <article class="feature-card"><h3>${tr("reportTodayRevenue")}</h3><p>${formatPrice(todaysRevenue)}</p></article>
+      <article class="feature-card"><h3>${tr("reportTotalRevenue")}</h3><p>${formatPrice(total)}</p></article>
+      <article class="feature-card"><h3>${tr("reportOrdersCount")}</h3><p>${orders.length}</p></article>
+      <article class="feature-card"><h3>${tr("reportAvgOrder")}</h3><p>${formatPrice(avgOrder)}</p></article>
+      <article class="feature-card"><h3>${tr("reportVatCollected")}</h3><p>${formatPrice(vat)}</p></article>
+    </div>
+    <div class="admin-grid">
+      <article class="summary-card">
+        <h3>${tr("reportSalesByCategory")}</h3>
+        ${catEntries.length ? `
+          <div class="bar-chart">
+            ${catEntries.map(([cat, val]) => `
+              <div class="bar-chart__row">
+                <span class="bar-chart__label">${escapeHtml(cat)}</span>
+                <span class="bar-chart__track"><span class="bar-chart__fill" style="width:${Math.round((val / maxCat) * 100)}%"></span></span>
+                <strong class="bar-chart__value">${formatPrice(val)}</strong>
+              </div>
+            `).join("")}
+          </div>
+        ` : `<p class="muted">${tr("reportNoData")}</p>`}
+      </article>
+      <article class="summary-card">
+        <h3>${tr("alertLowStock")}</h3>
+        ${lowStock.length ? `
+          <ul class="admin-alert-list">
+            ${lowStock.slice(0, 12).map((p) => {
+              const stock = Object.values(p.branchStock || {}).reduce((a, b) => a + Number(b || 0), 0);
+              return `<li><strong>${escapeHtml(p.name)}</strong> <span class="muted">— ${stock} ${tr("inStockLeft") || ""}</span></li>`;
+            }).join("")}
+          </ul>
+        ` : `<p class="muted">${tr("reportNoData")}</p>`}
+      </article>
+      <article class="summary-card">
+        <h3>${tr("alertExpiringSoon")}</h3>
+        ${expiring.length ? `
+          <ul class="admin-alert-list">
+            ${expiring.slice(0, 12).map((p) => `<li><strong>${escapeHtml(p.name)}</strong> <span class="muted">— ${escapeHtml(p.expiryDate)}</span></li>`).join("")}
+          </ul>
+        ` : `<p class="muted">${tr("reportNoData")}</p>`}
+      </article>
+    </div>
+  `;
+}
+
+function renderAdminCustomersTab(state, customers, tr) {
+  return `
+    <div class="admin-grid" id="customers-panel">
+      <article class="summary-card">
+        <h3>${tr("adminManageCustomers")}</h3>
+        <div class="admin-activity-list">
+          ${
+            customers.length
+              ? customers.map((customer) => {
+                  const isOpen = adminOpenCustomerEmail === customer.email;
+                  const customerMsgs = (state.messages || []).filter(
+                    (m) => String(m.email || "").toLowerCase() === customer.email.toLowerCase()
+                  ).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+                  return `
+                    <div class="admin-customer-row">
+                      <button class="admin-customer-toggle" type="button" data-customer-email="${escapeHtml(customer.email)}">
+                        <span>
+                          <strong>${escapeHtml(customer.fullName || "-")}</strong>
+                          <span class="muted">${escapeHtml(customer.email)}</span>
+                        </span>
+                        <span><span class="pill">${customerMsgs.length}</span></span>
+                      </button>
+                      ${isOpen ? `
+                        <div class="admin-customer-chat">
+                          <div class="admin-customer-chat__messages">
+                            ${customerMsgs.length ? customerMsgs.map((msg) => `
+                              <div class="admin-message-card" id="admin-message-${msg.id}">
+                                <div class="admin-message-card__head">
+                                  <strong>${escapeHtml(msg.fullName)}</strong>
+                                  <span class="muted">${new Date(msg.createdAt).toLocaleString()}</span>
+                                </div>
+                                <p>${escapeHtml(msg.message)}</p>
+                                <div class="admin-replies">
+                                  ${(Array.isArray(msg.replies) ? msg.replies : []).map((reply) => `
+                                    <div class="admin-reply-item">
+                                      <strong>${reply.by === "Admin" ? tr("authRoleAdmin") : escapeHtml(reply.by)}</strong>
+                                      <span class="muted">${new Date(reply.createdAt).toLocaleString()}</span>
+                                      <p>${escapeHtml(reply.text)}</p>
+                                    </div>
+                                  `).join("")}
+                                </div>
+                                <form class="admin-reply-form" data-message-id="${msg.id}">
+                                  <div class="customer-chat-input-row">
+                                    <input name="reply" placeholder="${tr("adminReplyPlaceholder")}" required autocomplete="off" />
+                                    <button class="button button--accent" type="submit">${tr("adminReplySend")}</button>
+                                  </div>
+                                </form>
+                              </div>
+                            `).join("") : `<p class="muted">${tr("adminNoMessages")}</p>`}
+                          </div>
+                        </div>
+                      ` : ""}
+                    </div>
+                  `;
+                }).join("")
+              : `<p>${tr("adminNoCustomers")}</p>`
+          }
+        </div>
+      </article>
+    </div>
+  `;
+}
+
+function renderAdminOrdersTab(state, recentOrders, tr) {
+  return `
+    <div class="admin-grid">
+      <article class="summary-card">
+        <h3>${tr("adminOrdersMap")}</h3>
+        <div class="admin-activity-list">
+          ${
+            recentOrders.length
+              ? recentOrders.map((order) => `
+                  <div class="admin-order-card">
+                    <div class="admin-order-header">
+                      <div>
+                        <strong>${escapeHtml(order.customer.fullName)}</strong>
+                        <div class="admin-order-meta">${escapeHtml(order.reference)} • ${escapeHtml(order.status || "pending")}</div>
+                      </div>
+                      <strong class="admin-order-total">${formatPrice(order.totals.total)}</strong>
+                    </div>
+                    <div class="admin-order-details">
+                      ${order.pickupBranch ? `<div class="admin-order-branch">📍 ${escapeHtml(order.pickupBranch.name)}</div>` : ""}
+                      ${order.pickupTime ? `<div class="admin-order-location">🕒 ${escapeHtml(order.pickupTime)}</div>` : ""}
+                      ${order.customer.location ? `<div class="admin-order-location">🌍 ${order.customer.location.lat.toFixed(4)}, ${order.customer.location.lng.toFixed(4)}</div>` : ""}
+                      <div class="admin-order-address">📮 ${escapeHtml(order.customer.address || tr("noAddressProvided"))}</div>
+                      <div class="admin-order-phone">📞 ${escapeHtml(order.customer.phone || tr("noPhoneProvided"))}</div>
+                    </div>
+                  </div>
+                `).join("")
+              : `<div class="empty-orders-state"><p>${tr("noOrdersYet")}</p><p class="muted">${tr("adminOrdersMapHint")}</p></div>`
+          }
+        </div>
+        <div class="admin-orders-map-container">
+          <div id="admin-orders-map" class="branches-map admin-orders-map"></div>
+          ${
+            recentOrders.length === 0
+              ? `<div class="map-overlay">${tr("adminOrdersMapEmpty")}</div>`
+              : recentOrders.some((order) => resolveOrderMapLocation(order))
+                ? ""
+                : `<div class="map-overlay">${tr("adminOrdersMapHint")}</div>`
+          }
+        </div>
+      </article>
+    </div>
   `;
 }
 
@@ -1795,6 +2006,8 @@ function renderCart(state, cartSummary, tr) {
             : `<div class="empty-state"><h3>${tr("emptyCart")}</h3><p>${tr("emptyCartText")}</p></div>`
         }
         <div class="summary-card__row"><span>${tr("subtotal")}</span><strong>${formatPrice(cartSummary.subtotal)}</strong></div>
+        ${cartSummary.savings ? `<div class="summary-card__row"><span>${tr("youSaved")}</span><strong class="summary-savings">- ${formatPrice(cartSummary.savings)}</strong></div>` : ""}
+        <div class="summary-card__row"><span>${tr("vatIncluded")}</span><strong>${formatPrice(cartSummary.vat)}</strong></div>
         <div class="summary-card__row"><span>${tr("pickupDeposit")}</span><strong>${formatPrice(cartSummary.deposit)}</strong></div>
         <div class="summary-card__row summary-card__total"><span>${tr("total")}</span><strong>${formatPrice(cartSummary.total)}</strong></div>
         <div class="cart-actions">
@@ -2105,7 +2318,7 @@ function bindEvents(currentRoute) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const state = getState();
-    const cartSummary = summarizeCart(state.products, state.cart);
+    const cartSummary = summarizeCart(state.products, state.cart, state.promotions || []);
     
     // Validate required fields
     const fullName = form.get("fullName");
@@ -2278,6 +2491,11 @@ function bindEvents(currentRoute) {
       price: form.get("price"),
       image: form.get("image"),
       inStock: form.get("inStock"),
+      sku: form.get("sku"),
+      barcode: form.get("barcode"),
+      supplierId: form.get("supplierId"),
+      expiryDate: form.get("expiryDate"),
+      minStock: form.get("minStock"),
     });
     if (ok) {
       event.currentTarget.reset();
@@ -2293,8 +2511,52 @@ function bindEvents(currentRoute) {
         price: form.get("price"),
         image: form.get("image"),
         inStock: form.get("inStock"),
+        sku: form.get("sku"),
+        barcode: form.get("barcode"),
+        supplierId: form.get("supplierId"),
+        expiryDate: form.get("expiryDate"),
+        minStock: form.get("minStock"),
       });
     }),
+  );
+
+  document.querySelectorAll("[data-admin-tab]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      setAdminTab(btn.dataset.adminTab);
+    }),
+  );
+
+  document.querySelector("#admin-supplier-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const ok = saveSupplier({
+      id: form.get("id"),
+      name: form.get("name"),
+      contact: form.get("contact"),
+      phone: form.get("phone"),
+      email: form.get("email"),
+      notes: form.get("notes"),
+    });
+    if (ok) event.currentTarget.reset();
+  });
+
+  document.querySelectorAll("[data-supplier-delete]").forEach((btn) =>
+    btn.addEventListener("click", () => deleteSupplier(btn.dataset.supplierDelete)),
+  );
+
+  document.querySelector("#admin-promotion-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const ok = savePromotion({
+      productId: form.get("productId"),
+      percent: form.get("percent"),
+      endDate: form.get("endDate"),
+    });
+    if (ok) event.currentTarget.reset();
+  });
+
+  document.querySelectorAll("[data-promotion-delete]").forEach((btn) =>
+    btn.addEventListener("click", () => deletePromotion(btn.dataset.promotionDelete)),
   );
 
   document.querySelectorAll(".branch-stock-form").forEach((formElement) =>
