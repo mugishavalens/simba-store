@@ -48,8 +48,8 @@ import {
 import { applyFilters, formatPrice, getCategories, route, summarizeCart } from "./utils.js";
 import { translateCategory } from "./i18n.js";
 
-const BRAND_LOGO =
-  "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBxMSEhUTEhMWFhUWGR4ZFxYYFxgdGRwYFxcXFh4dGBobHSghICAmHRgXITEiJSkrLi8wGB8zODMsNygtLisBCgoKDg0OGxAQGzImICUuLS0vMDUtLS0yNTUtLS0tLS8vLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLf/AABEIAOEA4QMBEQACEQEDEQH/xAAbAAEAAwEBAQEAAAAAAAAAAAAABAUGAwIBB//EADgQAAEEAAQEBQIEBQQDAQAAAAEAAgMRBAUSIQYxQVETImFxgTKRFEKhwSNScrHwFTPR4QeiwmL/xAaAQEAAwEBAQAAAAAAAAAAAAAAAwQFAgEG/8QAMxEAAgICAgECBAUCBgMBAAAAAAECAwQREiExE0EFFCJRMmFxgaEz8CNCkcHR4RWx8ST/2gATwEAAhEDEQA/AP3FAEAQBAEAQBAEAQBAEAQBAEAQBAEAQBAEAQBAEAQBAEAQBAEAQBAEAQBAEAQBAEAQBAEAQBAEAQBAEAQBAEAQBAEAQBAEAQBAEAQBAEAQBAEAQBAEBHx2MZEx0jzTWiyVzKSits7hXKySjHyyNk2cRYlpfEbANEEUQee4XFV0bVuJ3fj2US42LRYqUhCA+WgPqApOIuIRhA0vjc4ONAtLefPkTar35CpSckWsXElkycYsl5NmYxETZQxzQ66DqugavbopKrPUjy0RX1Omxwb3osFIRBAEAQBAEAQBAEAQBAEAQBAEAQBAEAQBAeS5AV+eTQthd4/+2RRFE37Vv0/RR2uPF8vBLQpua9Pz7FPwRicO5srcPG5jWuBJc6y7UOZ7cuVqthzraarXSLnxKu+Eou57bRC43zzEYZ7WxSNAeCa0eYVtzJINm+g5LjMvnW0k/JP8Mw6r03NPr8yozviPFsbFokLWluzttUhbQLzY2aXXXtfZQX5NseOn/BlrDwKLHPkttf6LfseuJuIcTUTmPMbHAlunZztOkaz6E3Q7C+q9ycizUXF62efD8KiXNSW2v70foODLvDZr+rSNR9aF/ra1Ib4rZgT1yfH7n5pneNdjsXTGvfGzZrWcywHzO7C+/8ASsa+bvt0ltI+mxqlh43KTSlI2HC3Ekc7jCIjE5g2bdjS3y7bCiNtloY+TGx8UtNGNmYM6UrG9pmk1K2UAHID0gCAIAgCAIAgCAIAgCAIAgCAIAgCA+OQH52c9ZinTR4jEPgbZaxraDSNwdbqJv0sBZfzEbZSjOWjceFKiMJ1w5e7NZg43fhNJe2Q+G5utptrqBAN+oq/W1dj/S1vZlSa9fetd+DKf+NcS1gm1GrMYHqXawP1VH4dJJS2bHxyLk4NfZkbPGjF5oIvyghh/pYC93t+YLi5etk8PsS4snjfD3Z7vb/18HzO424nM2QD6G6Y6H8rBrcB/wCw+F5dH1MlQ9keYsnRgyt93t/7I88UP1Zi1uglrPDaGNG5aPPTR6kkJk7eQlrpaGC1HBlLfb2X3GedPiwrWEaZZhTgOTRQ1UfnT8lW8u5wr17sofDcaNt7e+o/yRcoDMuwZlkrxpRYafq//LfYcz7qOrjjU8n5ZNkOWdlKEPwr+2yNwXhjEJcdOdLdJonm7Ubc4D1NAd7UeHBx3dPol+JWqzji1d6OkGaYvMZS2Fxggad3D6q9XfzEdBQHquo3WZEtReoo4sx8fCgnYuU37e3/AMOUOfTx4g4fCu8duoAGUlxJA81PBFNuz15FeLImrPTr7OnhVyo9a76X+X8fufokd1vzWqYP6HpAEAQBAEAQBAEAQBAEAQBAEAQBAfCgMZnWQ4OaZ7NRimrUaoB19aOx63VKjdj02S0+mauLnZNNakluJ44Dwb43YmMuDogQ1rh9SdvZb8VfquMKuUeUX4O/id0LFXNLUvdErh/gwYaTxHSl9fS2qANEAu3NkAmvcrujDVcuTeyLL+...";
+const BRAND_LOGO = "./assets/simba-logo.jpg";
+
 
 const VISION_SHOWCASE_IMAGES = [
   "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTf4rHABnzJsOKDxcNOG0TSPLoaodcxwMmX-A&s",
@@ -179,7 +179,7 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
     <header class="topbar">
       <div class="topbar__inner">
         <a class="brand brand--lockup" href="#/" data-home-link="true">
-          <img src="${BRAND_LOGO}" alt="Simba Supermarket Online Shopping" />
+          <div class="brand__mark"><img src="${BRAND_LOGO}" alt="Simba" /></div>
           <div class="brand__text">
             <strong>Simba</strong>
             <span>Super Market</span>
