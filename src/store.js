@@ -39,7 +39,7 @@ const state = {
     { id: 1, name: "Inyange Industries", contact: "Sales Office", phone: "+250 788 100 200", email: "sales@inyange.rw", notes: "Dairy & juices" },
     { id: 2, name: "Bralirwa", contact: "Distribution", phone: "+250 788 300 400", email: "orders@bralirwa.rw", notes: "Beverages" },
   ]),
-  promotions: readStorage(STORAGE_KEYS.promotions, []),
+  promotions: readStorage(STORAGE_KEYS.promotions, defaultDemoPromotions()),
   adminTab: readStorage(STORAGE_KEYS.adminTab, "overview"),
   customerNotificationFeed: readStorage(STORAGE_KEYS.customerNotificationFeed, []),
   assistantMessages: readStorage(STORAGE_KEYS.assistantMessages, [
@@ -58,6 +58,18 @@ const state = {
   adminFeedback: null,
   lastOrder: session.orders[0] ?? null,
 };
+
+function defaultDemoPromotions() {
+  const day = 24 * 60 * 60 * 1000;
+  const isoDate = (offsetDays) =>
+    new Date(Date.now() + offsetDays * day).toISOString().slice(0, 10);
+  return [
+    { id: 9001, productId: 13001, percent: 25, endDate: isoDate(2) },
+    { id: 9002, productId: 13002, percent: 30, endDate: isoDate(1) },
+    { id: 9003, productId: 13003, percent: 15, endDate: isoDate(3) },
+    { id: 9004, productId: 13004, percent: 20, endDate: isoDate(1) },
+  ];
+}
 
 function readStorage(key, fallback) {
   try {

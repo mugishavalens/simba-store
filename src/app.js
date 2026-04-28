@@ -345,6 +345,134 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
   `;
 }
 
+const DEAL_LABELS = {
+  en: { title: "Today's Deals", lead: "Limited-time offers — grab them before the timer runs out.", cta: "Shop deals", days: "d", hours: "h", minutes: "m", seconds: "s", endsIn: "Ends in", was: "Was", save: "Save", off: "OFF" },
+  fr: { title: "Offres du jour", lead: "Offres à durée limitée — saisissez-les avant la fin du compte à rebours.", cta: "Voir les offres", days: "j", hours: "h", minutes: "m", seconds: "s", endsIn: "Se termine dans", was: "Avant", save: "Économisez", off: "DE REMISE" },
+  rw: { title: "Igabanya ry'umunsi", lead: "Igihe ntarengwa — fata mbere y'uko isaha irangira.", cta: "Reba igabanya", days: "i", hours: "is", minutes: "ir", seconds: "s", endsIn: "Birangira mu", was: "Ahahoze", save: "Wizigamye", off: "IGABANYA" },
+};
+
+function getActiveDeals(state) {
+  const promotions = state.promotions || [];
+  const products = state.products || [];
+  const now = Date.now();
+  const productById = new Map(products.map((p) => [Number(p.id), p]));
+  return promotions
+    .map((promo) => {
+      const product = productById.get(Number(promo.productId));
+      if (!product) return null;
+      const percent = Number(promo.percent);
+      if (!Number.isFinite(percent) || percent <= 0) return null;
+      let endsAt = null;
+      if (promo.endDate) {
+        const t = new Date(promo.endDate).getTime();
+        if (!Number.isFinite(t) || t < now) return null;
+        endsAt = t;
+      } else {
+        const eod = new Date();
+        eod.setHours(23, 59, 59, 999);
+        endsAt = eod.getTime();
+      }
+      const effective = Math.max(0, Math.round(Number(product.price) * (1 - percent / 100)));
+      return { promo, product, percent, endsAt, effective };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.percent - a.percent)
+    .slice(0, 8);
+}
+
+function renderTodaysDeals(state, tr) {
+  const deals = getActiveDeals(state);
+  if (!deals.length) return "";
+  const labels = DEAL_LABELS[state.language] || DEAL_LABELS.en;
+  return `
+    <section class="deals-section" id="deals">
+      <div class="deals-section__inner">
+        <div class="deals-header">
+          <div>
+            <span class="deals-eyebrow"><span class="deals-eyebrow__dot"></span> ${labels.title}</span>
+            <h2 class="deals-title">${labels.title}</h2>
+            <p class="deals-lead">${labels.lead}</p>
+          </div>
+          <a class="button button--glass deals-cta" href="#catalog">${labels.cta}<span class="button__arrow" aria-hidden="true">&rarr;</span></a>
+        </div>
+        <div class="deals-grid" data-deals-grid>
+          ${deals.map((deal) => renderDealCard(deal, labels, state, tr)).join("")}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderDealCard(deal, labels, state, tr) {
+  const { product, percent, endsAt, effective } = deal;
+  const savings = Math.max(0, Math.round(Number(product.price) - effective));
+  return `
+    <article class="deal-card" data-deal-ends="${endsAt}">
+      <span class="deal-card__badge">-${percent}${labels.off}</span>
+      <div class="deal-card__media">
+        <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy" />
+        <div class="deal-card__shine" aria-hidden="true"></div>
+      </div>
+      <div class="deal-card__body">
+        <span class="pill pill--small">${renderCategoryLabel(state.language, product.category)}</span>
+        <h3 class="deal-card__name">${escapeHtml(product.name)}</h3>
+        <div class="deal-card__prices">
+          <strong class="deal-card__now">${formatPrice(effective)}</strong>
+          <span class="deal-card__was">${formatPrice(product.price)}</span>
+        </div>
+        <div class="deal-card__save">${labels.save} ${formatPrice(savings)}</div>
+        <div class="deal-card__countdown" data-countdown>
+          <span class="deals-eyebrow__dot"></span>
+          <span class="deal-card__countdown-label">${labels.endsIn}</span>
+          <div class="deal-card__timer" aria-live="off">
+            <span class="deal-card__timer-cell"><b data-cd="d">--</b><i>${labels.days}</i></span>
+            <span class="deal-card__timer-cell"><b data-cd="h">--</b><i>${labels.hours}</i></span>
+            <span class="deal-card__timer-cell"><b data-cd="m">--</b><i>${labels.minutes}</i></span>
+            <span class="deal-card__timer-cell"><b data-cd="s">--</b><i>${labels.seconds}</i></span>
+          </div>
+        </div>
+        <div class="deal-card__actions">
+          <a class="button button--ghost button--sm" href="#/product/${product.id}">${tr("details")}</a>
+          ${state.isAuthenticated ? `<button class="button button--primary button--sm add-to-cart" data-product-id="${product.id}">${tr("addToCart")}</button>` : `<a class="button button--primary button--sm" href="#/auth/signin">${tr("navSignIn")}</a>`}
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+let dealsCountdownTimer = null;
+function startDealsCountdown() {
+  if (dealsCountdownTimer) {
+    clearInterval(dealsCountdownTimer);
+    dealsCountdownTimer = null;
+  }
+  const cards = document.querySelectorAll(".deal-card[data-deal-ends]");
+  if (!cards.length) return;
+  const tick = () => {
+    const now = Date.now();
+    cards.forEach((card) => {
+      const ends = Number(card.dataset.dealEnds);
+      let diff = Math.max(0, ends - now);
+      const d = Math.floor(diff / 86400000); diff -= d * 86400000;
+      const h = Math.floor(diff / 3600000);  diff -= h * 3600000;
+      const m = Math.floor(diff / 60000);    diff -= m * 60000;
+      const s = Math.floor(diff / 1000);
+      const pad = (n) => String(n).padStart(2, "0");
+      const set = (key, val) => {
+        const el = card.querySelector(`[data-cd="${key}"]`);
+        if (el && el.textContent !== val) el.textContent = val;
+      };
+      set("d", pad(d));
+      set("h", pad(h));
+      set("m", pad(m));
+      set("s", pad(s));
+      if (ends - now <= 0) card.classList.add("deal-card--ended");
+    });
+  };
+  tick();
+  dealsCountdownTimer = setInterval(tick, 1000);
+}
+
 function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
   const topCategories = categories.slice(0, 6);
   const featured = filteredProducts.slice(0, 18);
@@ -402,11 +530,13 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
               <div class="stat"><div class="stat__value">${cartSummary.count}</div><div>${tr("cartCount")}</div></div>
             </div>
           </div>
-          <a class="hero__scroll" href="#catalog" aria-label="Scroll to catalog">
+          <a class="hero__scroll" href="#deals" aria-label="Scroll to deals">
             <span class="hero__scroll-dot"></span>
           </a>
         </div>
       </section>
+
+      ${renderTodaysDeals(state, tr)}
 
       <section class="section">
         <div class="feature-grid">
@@ -2137,6 +2267,7 @@ function renderFooter(tr) {
 }
 
 function bindEvents(currentRoute) {
+  startDealsCountdown();
   if (!hasBoundGlobalEvents) {
     let lastScrollY = window.scrollY;
     let ticking = false;
