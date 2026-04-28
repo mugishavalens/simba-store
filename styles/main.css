@@ -3034,3 +3034,39 @@ body {
 }
 .badge--ok { background: rgba(34, 197, 94, 0.15); color: #16a34a; }
 .badge--warn { background: rgba(245, 158, 11, 0.15); color: #d97706; }
+
+/* Password show/hide wrapper */
+.pw-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.pw-wrap input {
+  width: 100%;
+  padding-right: 2.8rem !important;
+}
+
+.pw-toggle {
+  position: absolute;
+  right: 0.6rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1rem;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: color 0.15s ease;
+  padding: 0;
+}
+
+.pw-toggle:hover {
+  color: var(--text);
+}

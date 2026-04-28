@@ -738,10 +738,10 @@ function renderCheckoutView(state, cartSummary, tr) {
                     <input name="district" required />
                   </label>
                   <label class="checkout-field">
-                    <span>${tr("pickupBranch")}</span>
+                    <span>${tr("pickupBranch")}${nearestBranchState ? ` <span class="muted" style="font-weight:400;font-size:0.8em">— ${tr("branchesNearest")}: ${escapeHtml(nearestBranchState.name)}</span>` : ""}</span>
                     <select name="branchId" required>
                       <option value="">${tr("checkoutBranchPlaceholder")}</option>
-                      ${SIMBA_BRANCHES.map((branch) => `<option value="${branch.id}" ${nearestBranchState?.id === branch.id ? "selected" : ""}>${escapeHtml(branch.name)}</option>`).join("")}
+                      ${SIMBA_BRANCHES.map((branch) => `<option value="${branch.id}" ${nearestBranchState?.id === branch.id ? "selected" : ""}>${escapeHtml(branch.name)}${nearestBranchState?.id === branch.id ? " ★" : ""}</option>`).join("")}
                     </select>
                   </label>
                 </div>
@@ -1188,8 +1188,8 @@ function renderAccountView(state, cartSummary, tr) {
               <form id="admin-profile-form" class="auth-form admin-form">
                 <label class="checkout-field"><span>${tr("fullName")}</span><input name="fullName" value="${escapeHtml(state.currentUser?.fullName || "")}" required /></label>
                 <label class="checkout-field"><span>${tr("authEmail")}</span><input value="${escapeHtml(state.currentUser?.email || "")}" disabled /></label>
-                <label class="checkout-field"><span>${tr("authNewPassword")}</span><input name="password" type="password" minlength="6" /></label>
-                <label class="checkout-field"><span>${tr("authConfirmPassword")}</span><input name="confirmPassword" type="password" minlength="6" /></label>
+                <label class="checkout-field"><span>${tr("authNewPassword")}</span>${pwWrap("password")}</label>
+                <label class="checkout-field"><span>${tr("authConfirmPassword")}</span>${pwWrap("confirmPassword")}</label>
                 <button class="button button--primary" type="submit">${tr("saveAdminProfile")}</button>
               </form>
             `
@@ -1204,8 +1204,8 @@ function renderAccountView(state, cartSummary, tr) {
                 <form id="customer-profile-form" class="auth-form admin-form">
                   <label class="checkout-field"><span>${tr("fullName")}</span><input name="fullName" value="${escapeHtml(state.currentUser?.fullName || "")}" required /></label>
                   <label class="checkout-field"><span>${tr("authEmail")}</span><input value="${escapeHtml(state.currentUser?.email || "")}" disabled /></label>
-                  <label class="checkout-field"><span>${tr("authNewPassword")}</span><input name="password" type="password" minlength="6" /></label>
-                  <label class="checkout-field"><span>${tr("authConfirmPassword")}</span><input name="confirmPassword" type="password" minlength="6" /></label>
+                  <label class="checkout-field"><span>${tr("authNewPassword")}</span>${pwWrap("password")}</label>
+                  <label class="checkout-field"><span>${tr("authConfirmPassword")}</span>${pwWrap("confirmPassword")}</label>
                   <div class="detail-actions">
                     <button class="button button--primary" type="submit">${tr("customerUpdateProfile")}</button>
                     <button class="button button--ghost" id="account-signout" type="button">${tr("navSignOut")}</button>
@@ -1907,42 +1907,40 @@ function renderAdminCustomersTab(state, customers, tr) {
 }
 
 function renderAdminOrdersTab(state, recentOrders, tr) {
+  const hasLocations = recentOrders.some((order) => resolveOrderMapLocation(order));
   return `
     <div class="admin-grid">
       <article class="summary-card">
         <h3>${tr("adminOrdersMap")}</h3>
+        <div class="admin-orders-map-container" style="margin-bottom:1rem">
+          <div id="admin-orders-map" class="branches-map admin-orders-map"></div>
+          ${!recentOrders.length ? `<div class="map-overlay">${tr("adminOrdersMapEmpty")}</div>` : !hasLocations ? `<div class="map-overlay">${tr("adminOrdersMapHint")}</div>` : ""}
+        </div>
         <div class="admin-activity-list">
           ${
             recentOrders.length
-              ? recentOrders.map((order) => `
-                  <div class="admin-order-card">
-                    <div class="admin-order-header">
-                      <div>
-                        <strong>${escapeHtml(order.customer.fullName)}</strong>
-                        <div class="admin-order-meta">${escapeHtml(order.reference)} • ${escapeHtml(order.status || "pending")}</div>
+              ? recentOrders.map((order) => {
+                  const loc = resolveOrderMapLocation(order);
+                  return `
+                    <div class="admin-order-card ${loc ? "admin-order-card--has-location" : ""}" ${loc ? `data-order-lat="${loc.lat}" data-order-lng="${loc.lng}"` : ""}>
+                      <div class="admin-order-header">
+                        <div>
+                          <strong>${escapeHtml(order.customer.fullName)}</strong>
+                          <div class="admin-order-meta">${escapeHtml(order.reference)} • ${escapeHtml(order.status || "pending")}</div>
+                        </div>
+                        <strong class="admin-order-total">${formatPrice(order.totals.total)}</strong>
                       </div>
-                      <strong class="admin-order-total">${formatPrice(order.totals.total)}</strong>
+                      <div class="admin-order-details">
+                        ${order.pickupBranch ? `<div class="admin-order-branch">📍 ${escapeHtml(order.pickupBranch.name)}</div>` : ""}
+                        ${order.pickupTime ? `<div class="admin-order-location">🕒 ${escapeHtml(order.pickupTime)}</div>` : ""}
+                        ${loc ? `<div class="admin-order-location">🌍 ${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}</div>` : ""}
+                        <div class="admin-order-address">📮 ${escapeHtml(order.customer.address || tr("noAddressProvided"))}</div>
+                        <div class="admin-order-phone">📞 ${escapeHtml(order.customer.phone || tr("noPhoneProvided"))}</div>
+                      </div>
                     </div>
-                    <div class="admin-order-details">
-                      ${order.pickupBranch ? `<div class="admin-order-branch">📍 ${escapeHtml(order.pickupBranch.name)}</div>` : ""}
-                      ${order.pickupTime ? `<div class="admin-order-location">🕒 ${escapeHtml(order.pickupTime)}</div>` : ""}
-                      ${order.customer.location ? `<div class="admin-order-location">🌍 ${order.customer.location.lat.toFixed(4)}, ${order.customer.location.lng.toFixed(4)}</div>` : ""}
-                      <div class="admin-order-address">📮 ${escapeHtml(order.customer.address || tr("noAddressProvided"))}</div>
-                      <div class="admin-order-phone">📞 ${escapeHtml(order.customer.phone || tr("noPhoneProvided"))}</div>
-                    </div>
-                  </div>
-                `).join("")
+                  `;
+                }).join("")
               : `<div class="empty-orders-state"><p>${tr("noOrdersYet")}</p><p class="muted">${tr("adminOrdersMapHint")}</p></div>`
-          }
-        </div>
-        <div class="admin-orders-map-container">
-          <div id="admin-orders-map" class="branches-map admin-orders-map"></div>
-          ${
-            recentOrders.length === 0
-              ? `<div class="map-overlay">${tr("adminOrdersMapEmpty")}</div>`
-              : recentOrders.some((order) => resolveOrderMapLocation(order))
-                ? ""
-                : `<div class="map-overlay">${tr("adminOrdersMapHint")}</div>`
           }
         </div>
       </article>
@@ -1968,8 +1966,8 @@ function renderAuthView(state, mode, tr) {
           <form id="signup-form" class="auth-form">
             <label class="checkout-field"><span>${tr("fullName")}</span><input name="fullName" required /></label>
             <label class="checkout-field"><span>${tr("authEmail")}</span><input name="email" type="email" required /></label>
-            <label class="checkout-field"><span>${tr("authPassword")}</span><input name="password" type="password" minlength="6" required /></label>
-            <label class="checkout-field"><span>${tr("authConfirmPassword")}</span><input name="confirmPassword" type="password" minlength="6" required /></label>
+            <label class="checkout-field"><span>${tr("authPassword")}</span>${pwWrap("password", true)}</label>
+            <label class="checkout-field"><span>${tr("authConfirmPassword")}</span>${pwWrap("confirmPassword", true)}</label>
             <button class="button button--primary auth-submit" type="submit">${tr("authCreateAccount")}</button>
           </form>
           <p class="auth-switch">${tr("authHaveAccount")} <a class="auth-inline-link" href="#/auth/signin">${tr("navSignIn")}</a></p>
@@ -1990,8 +1988,8 @@ function renderAuthView(state, mode, tr) {
           ${feedback}
           <form id="reset-form" class="auth-form">
             <label class="checkout-field"><span>${tr("authEmail")}</span><input name="email" type="email" required /></label>
-            <label class="checkout-field"><span>${tr("authNewPassword")}</span><input name="password" type="password" minlength="6" required /></label>
-            <label class="checkout-field"><span>${tr("authConfirmPassword")}</span><input name="confirmPassword" type="password" minlength="6" required /></label>
+            <label class="checkout-field"><span>${tr("authNewPassword")}</span>${pwWrap("password", true)}</label>
+            <label class="checkout-field"><span>${tr("authConfirmPassword")}</span>${pwWrap("confirmPassword", true)}</label>
             <button class="button button--primary auth-submit" type="submit">${tr("authResetButton")}</button>
           </form>
           <p class="auth-switch"><a class="auth-inline-link" href="#/auth/signin">${tr("navSignIn")}</a></p>
@@ -2011,7 +2009,7 @@ function renderAuthView(state, mode, tr) {
         ${feedback}
         <form id="signin-form" class="auth-form">
           <label class="checkout-field"><span>${tr("authEmail")}</span><input name="email" type="email" autocomplete="email" required /></label>
-          <label class="checkout-field"><span>${tr("authPassword")}</span><input name="password" type="password" minlength="6" required /></label>
+          <label class="checkout-field"><span>${tr("authPassword")}</span>${pwWrap("password", true)}</label>
           <div class="summary-card__row">
             <label class="auth-remember"><input type="checkbox" name="remember" /> <span>${tr("authRemember")}</span></label>
             <a class="auth-inline-link" href="#/auth/forgot">${tr("authForgot")}</a>
@@ -2164,6 +2162,16 @@ function bindEvents(currentRoute) {
     hasBoundGlobalEvents = true;
   }
 
+  document.querySelectorAll(".pw-toggle").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const input = btn.previousElementSibling;
+      if (!input) return;
+      const show = input.type === "password";
+      input.type = show ? "text" : "password";
+      btn.textContent = show ? "🙈" : "👁";
+    })
+  );
+
   document.querySelector("#search-input")?.addEventListener("input", (event) => setSearch(event.target.value));
   document.querySelector("#search-input")?.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
@@ -2279,6 +2287,18 @@ function bindEvents(currentRoute) {
       render();
     }),
   );
+
+  // Admin notification items: mark seen immediately and navigate
+  document.querySelectorAll(".admin-notification-item[data-admin-tab]").forEach((button) =>
+    button.addEventListener("click", () => {
+      const tab = button.dataset.adminTab;
+      markAdminNotificationsSeen("customerMessages");
+      markAdminNotificationsSeen("productUpdates");
+      adminCustomersNotificationsOpen = false;
+      adminProductsNotificationsOpen = false;
+      setAdminTab(tab);
+    }),
+  );
   document.querySelectorAll("[data-notification-hash]").forEach((button) =>
     button.addEventListener("click", () => {
       const targetHash = String(button.dataset.notificationHash || "/account");
@@ -2286,6 +2306,8 @@ function bindEvents(currentRoute) {
       customerNotificationsOpen = false;
       topbarNotificationsOpen = false;
       markCustomerNotificationSeen(getState().currentUser?.email, button.dataset.notificationId);
+      // Immediately re-render to remove the notification before navigating
+      render();
       location.hash = targetHash.startsWith("/") ? targetHash : `/${targetHash.replace(/^#?\/?/, "")}`;
     }),
   );
@@ -2713,14 +2735,13 @@ function bindEvents(currentRoute) {
       const email = btn.dataset.customerEmail || "";
       adminOpenCustomerEmail = adminOpenCustomerEmail === email ? "" : email;
       render();
-      loadLeaflet(() => {
-        requestAnimationFrame(() => {
-          mountAdminOrdersMap(adminOpenCustomerEmail || null);
-          if (adminOpenCustomerEmail) {
-            document.getElementById("admin-orders-map")?.scrollIntoView({ behavior: "smooth", block: "center" });
-          }
+      if (adminOpenCustomerEmail) {
+        loadLeaflet(() => {
+          requestAnimationFrame(() => {
+            mountAdminOrdersMap(adminOpenCustomerEmail);
+          });
         });
-      });
+      }
     }),
   );
 
@@ -3321,11 +3342,13 @@ function loadLeaflet(callback) {
 
 function initBranchesMap() {
   const mapEl = document.getElementById("branches-map");
-  if (!mapEl || branchMapInitialized) return;
+  const ordersMapEl = document.getElementById("admin-orders-map");
+  if (!mapEl && !ordersMapEl) return;
+  if (branchMapInitialized) return;
   branchMapInitialized = true;
   loadLeaflet(() => {
-    mountBranchesMap(document.getElementById("branches-map"));
-    mountAdminOrdersMap();
+    if (document.getElementById("branches-map")) mountBranchesMap(document.getElementById("branches-map"));
+    if (document.getElementById("admin-orders-map")) mountAdminOrdersMap();
   });
 }
 
@@ -3600,6 +3623,10 @@ function getTimeAgo(dateString, tr) {
   if (diffHours < 24) return `${diffHours}${tr("timeHourAgo")}`;
   if (diffDays < 7) return `${diffDays}${tr("timeDayAgo")}`;
   return date.toLocaleDateString();
+}
+
+function pwWrap(name, required = false) {
+  return `<div class="pw-wrap"><input name="${name}" type="password" minlength="6" ${required ? "required" : ""} /><button type="button" class="pw-toggle" tabindex="-1" aria-label="Show password">&#128065;</button></div>`;
 }
 
 function escapeHtml(value) {
