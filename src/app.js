@@ -30,6 +30,10 @@ import {
   resetPassword,
   pushRecentlyViewed,
   clearRecentlyViewed,
+  toggleWishlist,
+  removeFromWishlist,
+  clearWishlist,
+  isInWishlist,
   saveProduct,
   savePromotion,
   saveSupplier,
@@ -234,6 +238,10 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
         <div class="topbar__actions">
           <div class="topbar__utility">
             ${!isAdmin ? `
+            <a class="cart-icon-btn wishlist-icon-btn" href="#wishlist" aria-label="${getWishlistLabels(state.language).topbar}" title="${getWishlistLabels(state.language).topbar}">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21s-7.5-4.6-9.7-9.1C.7 8.2 2.6 4.5 6.1 4.1c2-.2 3.8.8 5 2.4 1.2-1.6 3-2.6 5-2.4 3.5.4 5.4 4.1 3.7 7.8C19.5 16.4 12 21 12 21z"/></svg>
+              ${(state.wishlist || []).length > 0 ? `<span class="notification-count">${(state.wishlist || []).length}</span>` : ""}
+            </a>
             <button class="cart-icon-btn" id="cart-toggle" type="button" aria-label="${tr("cart")}">
               &#128722;
               ${cartSummary.count > 0 ? `<span class="notification-count">${cartSummary.count}</span>` : ""}
@@ -411,6 +419,7 @@ function renderDealCard(deal, labels, state, tr) {
   return `
     <article class="deal-card" data-deal-ends="${endsAt}">
       <span class="deal-card__badge">-${percent}${labels.off}</span>
+      ${renderHeartButton(product.id, state, { variant: "solid" })}
       <div class="deal-card__media">
         <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy" />
         <div class="deal-card__shine" aria-hidden="true"></div>
@@ -513,6 +522,7 @@ function renderRecentlyViewedItem(product, labels, state) {
     <a class="recent-card" href="#/product/${product.id}" aria-label="${escapeHtml(product.name)}">
       <div class="recent-card__media">
         ${promo ? `<span class="recent-card__badge">-${Number(promo.percent)}%</span>` : ""}
+        ${renderHeartButton(product.id, state, { size: "sm" })}
         <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy" />
       </div>
       <div class="recent-card__body">
@@ -525,6 +535,62 @@ function renderRecentlyViewedItem(product, labels, state) {
         <span class="recent-card__cta">${labels.view} <span aria-hidden="true">&rarr;</span></span>
       </div>
     </a>
+  `;
+}
+
+function renderWishlistSection(state, tr) {
+  const ids = Array.isArray(state.wishlist) ? state.wishlist : [];
+  if (!ids.length) return "";
+  const productById = new Map((state.products || []).map((p) => [Number(p.id), p]));
+  const items = ids.map((id) => productById.get(Number(id))).filter(Boolean);
+  if (!items.length) return "";
+  const labels = getWishlistLabels(state.language);
+  return `
+    <section class="section wishlist-section" id="wishlist">
+      <div class="wishlist-section__header">
+        <div>
+          <span class="wishlist-eyebrow"><span class="wishlist-eyebrow__heart" aria-hidden="true">♥</span> ${labels.title}</span>
+          <h2 class="section__title">${labels.title}</h2>
+          <p class="section__lead">${labels.lead} <span class="muted">· ${wishlistCountLabel(items.length, labels)}</span></p>
+        </div>
+        <button type="button" class="button button--ghost button--sm" id="wishlist-clear">${labels.clear}</button>
+      </div>
+      <div class="wishlist-grid">
+        ${items.map((product) => renderWishlistCard(product, labels, state, tr)).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderWishlistCard(product, labels, state, tr) {
+  const promo = getActivePromotion(product.id, state.promotions || []);
+  const effective = promo
+    ? Math.max(0, Math.round(Number(product.price) * (1 - Number(promo.percent) / 100)))
+    : Number(product.price);
+  return `
+    <article class="wishlist-card">
+      <div class="wishlist-card__media">
+        ${promo ? `<span class="wishlist-card__badge">-${Number(promo.percent)}%</span>` : ""}
+        <button type="button" class="wishlist-card__remove" data-wishlist-remove="${product.id}" aria-label="${labels.remove}" title="${labels.remove}">
+          <span aria-hidden="true">×</span>
+        </button>
+        <a href="#/product/${product.id}" aria-label="${escapeHtml(product.name)}">
+          <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy" />
+        </a>
+      </div>
+      <div class="wishlist-card__body">
+        <span class="pill pill--small">${renderCategoryLabel(state.language, product.category)}</span>
+        <h3 class="wishlist-card__name">${escapeHtml(product.name)}</h3>
+        <div class="wishlist-card__prices">
+          ${promo ? `<span class="wishlist-card__was">${formatPrice(product.price)}</span>` : ""}
+          <strong class="wishlist-card__now">${formatPrice(effective)}</strong>
+        </div>
+        <div class="wishlist-card__actions">
+          <a class="button button--ghost button--sm" href="#/product/${product.id}">${tr("details")}</a>
+          ${state.isAuthenticated ? `<button class="button button--primary button--sm add-to-cart" data-product-id="${product.id}">${tr("addToCart")}</button>` : `<a class="button button--primary button--sm" href="#/auth/signin">${tr("navSignIn")}</a>`}
+        </div>
+      </div>
+    </article>
   `;
 }
 
@@ -699,6 +765,8 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
         </div>
       </section>
 
+      ${renderWishlistSection(state, tr)}
+
       ${renderRecentlyViewed(state, tr)}
 
       <section class="section" id="catalog">
@@ -805,6 +873,44 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
   `;
 }
 
+const WISHLIST_LABELS = {
+  en: { add: "Save to wishlist", remove: "Remove from wishlist", title: "Saved items", lead: "Your wishlist — handpicked favourites for next time.", empty: "Tap the heart on any product to save it here.", clear: "Clear wishlist", remove_short: "Remove", count_one: "1 saved item", count_many: "{n} saved items", topbar: "Wishlist", account_title: "Saved items", account_lead: "Items you saved for later.", view: "Open wishlist" },
+  fr: { add: "Ajouter aux favoris", remove: "Retirer des favoris", title: "Articles sauvegardés", lead: "Votre liste de favoris — vos coups de cœur pour plus tard.", empty: "Touchez le cœur d'un produit pour l'enregistrer ici.", clear: "Tout effacer", remove_short: "Retirer", count_one: "1 article sauvegardé", count_many: "{n} articles sauvegardés", topbar: "Favoris", account_title: "Articles sauvegardés", account_lead: "Articles que vous avez sauvegardés.", view: "Ouvrir les favoris" },
+  rw: { add: "Bika ku byatoranyijwe", remove: "Kuraho ku byatoranyijwe", title: "Ibyabitswe", lead: "Urutonde rw'ibyo wabitse — ibyo ukunda kuzagaruka kuri byo.", empty: "Kanda umutima ku gicuruzwa kugira ngo ukibike hano.", clear: "Siba byose", remove_short: "Kuraho", count_one: "Ikintu 1 cyabitswe", count_many: "Ibintu {n} byabitswe", topbar: "Ibyabitswe", account_title: "Ibyabitswe", account_lead: "Ibintu wabitse kuzagaruka kuri byo.", view: "Fungura ibyabitswe" },
+};
+
+function getWishlistLabels(lang) {
+  return WISHLIST_LABELS[lang] || WISHLIST_LABELS.en;
+}
+
+function wishlistCountLabel(count, labels) {
+  const n = Number(count) || 0;
+  if (n === 1) return labels.count_one;
+  return labels.count_many.replace("{n}", String(n));
+}
+
+function renderHeartButton(productId, state, options = {}) {
+  const labels = getWishlistLabels(state.language);
+  const saved = isInWishlist(productId);
+  const sizeMod = options.size === "sm" ? " heart-btn--sm" : "";
+  const variantMod = options.variant === "solid" ? " heart-btn--solid" : "";
+  const label = saved ? labels.remove : labels.add;
+  return `
+    <button
+      type="button"
+      class="heart-btn${sizeMod}${variantMod}${saved ? " heart-btn--active" : ""}"
+      data-wishlist-toggle="${productId}"
+      aria-pressed="${saved}"
+      aria-label="${label}"
+      title="${label}"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M12 21s-7.5-4.6-9.7-9.1C.7 8.2 2.6 4.5 6.1 4.1c2-.2 3.8.8 5 2.4 1.2-1.6 3-2.6 5-2.4 3.5.4 5.4 4.1 3.7 7.8C19.5 16.4 12 21 12 21z" />
+      </svg>
+    </button>
+  `;
+}
+
 function renderProductCard(product, tr) {
   const state = getState();
   const promo = getActivePromotion(product.id, state.promotions || []);
@@ -815,6 +921,7 @@ function renderProductCard(product, tr) {
     <article class="product-card">
       <div class="product-card__media">
         ${promo ? `<span class="promo-badge">-${Number(promo.percent)}${tr("promotionBadge")}</span>` : ""}
+        ${renderHeartButton(product.id, state)}
         <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy" />
       </div>
       <div class="product-card__body">
@@ -850,6 +957,7 @@ function renderProductView(state, productId, cartSummary, tr) {
       <a class="button button--ghost" href="#/">${tr("backHome")}</a>
       <section class="detail-card">
         <div class="detail-card__media">
+          ${renderHeartButton(product.id, state, { variant: "solid" })}
           <img src="${product.image}" alt="${escapeHtml(product.name)}" />
         </div>
         <div class="detail-card__content">
@@ -872,6 +980,10 @@ function renderProductView(state, productId, cartSummary, tr) {
           <div class="detail-actions">
             ${state.isAuthenticated ? `<button class="button button--primary add-to-cart" data-product-id="${product.id}">${tr("addToCart")}</button>` : `<a class="button button--primary" href="#/auth/signin">${tr("navSignIn")}</a>`}
             ${state.isAuthenticated ? `<button class="button button--accent" id="buy-now" data-product-id="${product.id}">${tr("goCheckout")}</button>` : ""}
+            <button type="button" class="button button--ghost" data-wishlist-toggle="${product.id}" aria-pressed="${isInWishlist(product.id)}">
+              <span aria-hidden="true">${isInWishlist(product.id) ? "♥" : "♡"}</span>
+              ${isInWishlist(product.id) ? getWishlistLabels(state.language).remove : getWishlistLabels(state.language).add}
+            </button>
           </div>
           <div class="banner">
             <h3>${tr("momoHint")}</h3>
@@ -1361,6 +1473,11 @@ function renderAccountView(state, cartSummary, tr) {
             <h3>${tr("cart")}</h3>
             <p>${cartSummary.count} ${tr("cartCount")}</p>
             <button class="button button--primary" id="account-open-cart" type="button" style="margin-top:0.5rem">&#128722; ${tr("viewCart")}</button>
+          </article>
+          <article class="feature-card">
+            <h3>${getWishlistLabels(state.language).account_title}</h3>
+            <p>${wishlistCountLabel((state.wishlist || []).length, getWishlistLabels(state.language))}</p>
+            <a class="button button--primary" href="#wishlist" style="margin-top:0.5rem">♥ ${getWishlistLabels(state.language).view}</a>
           </article>
           ${
             state.currentUser?.role === "customer"
@@ -2330,6 +2447,29 @@ function bindEvents(currentRoute) {
   }
   document.querySelector("#recently-viewed-clear")?.addEventListener("click", () => {
     clearRecentlyViewed();
+  });
+  document.querySelectorAll("[data-wishlist-toggle]").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const id = Number(btn.getAttribute("data-wishlist-toggle"));
+      if (!Number.isFinite(id)) return;
+      btn.classList.add("heart-btn--pop");
+      setTimeout(() => btn.classList.remove("heart-btn--pop"), 320);
+      toggleWishlist(id);
+    });
+  });
+  document.querySelectorAll("[data-wishlist-remove]").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const id = Number(btn.getAttribute("data-wishlist-remove"));
+      if (!Number.isFinite(id)) return;
+      removeFromWishlist(id);
+    });
+  });
+  document.querySelector("#wishlist-clear")?.addEventListener("click", () => {
+    clearWishlist();
   });
   if (!hasBoundGlobalEvents) {
     let lastScrollY = window.scrollY;

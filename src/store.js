@@ -41,6 +41,7 @@ const state = {
   ]),
   promotions: readStorage(STORAGE_KEYS.promotions, defaultDemoPromotions()),
   recentlyViewed: readStorage(STORAGE_KEYS.recentlyViewed, []),
+  wishlist: readStorage(STORAGE_KEYS.wishlist, []),
   adminTab: readStorage(STORAGE_KEYS.adminTab, "overview"),
   customerNotificationFeed: readStorage(STORAGE_KEYS.customerNotificationFeed, []),
   assistantMessages: readStorage(STORAGE_KEYS.assistantMessages, [
@@ -344,6 +345,44 @@ export function pushRecentlyViewed(productId) {
 export function clearRecentlyViewed() {
   state.recentlyViewed = [];
   persist(STORAGE_KEYS.recentlyViewed, []);
+  emit();
+}
+
+export function isInWishlist(productId) {
+  const id = Number(productId);
+  if (!Number.isFinite(id)) return false;
+  const list = Array.isArray(state.wishlist) ? state.wishlist : [];
+  return list.some((entry) => Number(entry) === id);
+}
+
+export function toggleWishlist(productId) {
+  const id = Number(productId);
+  if (!Number.isFinite(id)) return false;
+  const list = Array.isArray(state.wishlist) ? state.wishlist : [];
+  const exists = list.some((entry) => Number(entry) === id);
+  const next = exists
+    ? list.filter((entry) => Number(entry) !== id)
+    : [id, ...list.filter((entry) => Number(entry) !== id)].slice(0, 60);
+  state.wishlist = next;
+  persist(STORAGE_KEYS.wishlist, next);
+  emit();
+  return !exists;
+}
+
+export function removeFromWishlist(productId) {
+  const id = Number(productId);
+  if (!Number.isFinite(id)) return;
+  const list = Array.isArray(state.wishlist) ? state.wishlist : [];
+  const next = list.filter((entry) => Number(entry) !== id);
+  if (next.length === list.length) return;
+  state.wishlist = next;
+  persist(STORAGE_KEYS.wishlist, next);
+  emit();
+}
+
+export function clearWishlist() {
+  state.wishlist = [];
+  persist(STORAGE_KEYS.wishlist, []);
   emit();
 }
 

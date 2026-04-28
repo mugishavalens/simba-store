@@ -35,3 +35,15 @@ Tabbed admin (visible only to `admin@simba.rw` / `SimbaAdmin@2026`):
 - **Orders** — Recent orders panel with the orders map (existing flow).
 
 Cart / checkout now show **You saved** (when promotions apply) and **VAT (18%, included)** rows. State for suppliers, promotions, and the active admin tab is persisted in `localStorage` (`simba.suppliers.v1`, `simba.promotions.v1`, `simba.admin-tab.v1`).
+
+## Wishlist (Saved items)
+
+Customers can save products to a personal wishlist that lives in `localStorage` (`simba.wishlist.v1`):
+
+- Heart icon button overlays every product card (catalog grid), every "Today's deals" card, every "Recently viewed" rail card, and the product detail page.
+- Toggle hearts add/remove the product; filled red = saved. Heart pop animation respects `prefers-reduced-motion`.
+- Topbar gets a wishlist heart icon (next to the cart) with a count badge — links to `#wishlist`.
+- Home page shows a **Saved items** section above the Recently viewed rail when the wishlist is non-empty: grid of cards with image, badge if on promo, was/now prices, "Details" + "Add to cart" buttons, and a per-card × remove. Section has a "Clear wishlist" button.
+- Customer account dashboard shows a **Saved items** tile (count + "Open wishlist" link).
+- Wishlist labels translated for English, French, and Kinyarwanda (inline `WISHLIST_LABELS`).
+- Store API: `toggleWishlist`, `removeFromWishlist`, `clearWishlist`, `isInWishlist` exported from `src/store.js`.
