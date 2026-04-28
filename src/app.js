@@ -361,30 +361,50 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
 
   return `
     <main>
-      <section class="hero" id="home">
-        <div class="hero__content">
+      <section class="hero hero--cinematic" id="home">
+        <div class="hero__media" aria-hidden="true">
+          <video
+            class="hero__video"
+            autoplay
+            muted
+            loop
+            playsinline
+            preload="metadata"
+            poster="https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=2000&q=80"
+          >
+            <source src="https://assets.mixkit.co/videos/preview/mixkit-various-vegetables-on-a-counter-4456-large.mp4" type="video/mp4" />
+            <source src="https://assets.mixkit.co/videos/preview/mixkit-fresh-vegetables-on-the-table-4232-large.mp4" type="video/mp4" />
+          </video>
+          <div class="hero__scrim"></div>
+          <div class="hero__glow hero__glow--a"></div>
+          <div class="hero__glow hero__glow--b"></div>
+        </div>
+        <div class="hero__content hero__content--cinematic">
           <div class="hero__grid">
-            <div>
-              <div class="eyebrow">${tr("heroEyebrow")}</div>
-              <h1>${tr("heroTitle")}</h1>
-              <p>${tr("heroText")}</p>
+            <div class="hero__copy">
+              <div class="eyebrow eyebrow--on-dark">${tr("heroEyebrow")}</div>
+              <h1 class="hero__title">${tr("heroTitle")}</h1>
+              <p class="hero__lede">${tr("heroText")}</p>
               <div class="hero__actions">
-                <a class="button button--primary" href="#catalog">${tr("shopNow")}</a>
-                ${state.isAuthenticated ? `<button class="button button--ghost" id="hero-cart">${tr("viewCart")}</button>` : `<a class="button button--ghost" href="#/auth/signin">${tr("navSignIn")}</a>`}
+                <a class="button button--primary button--lg" href="#catalog">${tr("shopNow")}<span class="button__arrow" aria-hidden="true">&rarr;</span></a>
+                ${state.isAuthenticated ? `<button class="button button--glass" id="hero-cart">${tr("viewCart")}</button>` : `<a class="button button--glass" href="#/auth/signin">${tr("navSignIn")}</a>`}
+              </div>
+              <div class="hero__badges">
+                <span class="hero-badge hero-badge--on-dark">${tr("heroBadgeOne")}</span>
+                <span class="hero-badge hero-badge--on-dark">${tr("heroBadgeTwo")}</span>
+                <span class="hero-badge hero-badge--on-dark">${tr("heroBadgeThree")}</span>
               </div>
             </div>
-            <div class="stats">
+            <div class="stats stats--on-dark">
               <div class="stat"><div class="stat__value">${state.products.length}</div><div>${tr("statProducts")}</div></div>
               <div class="stat"><div class="stat__value">${categories.length}</div><div>${tr("statCategories")}</div></div>
               <div class="stat"><div class="stat__value">3</div><div>${tr("statLanguage")}</div></div>
               <div class="stat"><div class="stat__value">${cartSummary.count}</div><div>${tr("cartCount")}</div></div>
             </div>
-            <div class="hero__badges">
-              <span class="hero-badge">${tr("heroBadgeOne")}</span>
-              <span class="hero-badge">${tr("heroBadgeTwo")}</span>
-              <span class="hero-badge">${tr("heroBadgeThree")}</span>
-            </div>
           </div>
+          <a class="hero__scroll" href="#catalog" aria-label="Scroll to catalog">
+            <span class="hero__scroll-dot"></span>
+          </a>
         </div>
       </section>
 
