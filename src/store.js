@@ -40,6 +40,7 @@ const state = {
     { id: 2, name: "Bralirwa", contact: "Distribution", phone: "+250 788 300 400", email: "orders@bralirwa.rw", notes: "Beverages" },
   ]),
   promotions: readStorage(STORAGE_KEYS.promotions, defaultDemoPromotions()),
+  recentlyViewed: readStorage(STORAGE_KEYS.recentlyViewed, []),
   adminTab: readStorage(STORAGE_KEYS.adminTab, "overview"),
   customerNotificationFeed: readStorage(STORAGE_KEYS.customerNotificationFeed, []),
   assistantMessages: readStorage(STORAGE_KEYS.assistantMessages, [
@@ -67,7 +68,8 @@ function defaultDemoPromotions() {
     { id: 9001, productId: 13001, percent: 25, endDate: isoDate(2) },
     { id: 9002, productId: 13002, percent: 30, endDate: isoDate(1) },
     { id: 9003, productId: 13003, percent: 15, endDate: isoDate(3) },
-    { id: 9004, productId: 13004, percent: 20, endDate: isoDate(1) },
+    { id: 9004, productId: 15001, percent: 20, endDate: isoDate(1) },
+    { id: 9005, productId: 16001, percent: 18, endDate: isoDate(2) },
   ];
 }
 
@@ -326,6 +328,23 @@ export function setGroqKey(rawKey) {
   }
   emit();
   return true;
+}
+
+export function pushRecentlyViewed(productId) {
+  const id = Number(productId);
+  if (!Number.isFinite(id)) return;
+  const list = Array.isArray(state.recentlyViewed) ? state.recentlyViewed : [];
+  if (Number(list[0]) === id) return;
+  const next = [id, ...list.filter((entry) => Number(entry) !== id)].slice(0, 12);
+  state.recentlyViewed = next;
+  persist(STORAGE_KEYS.recentlyViewed, next);
+  emit();
+}
+
+export function clearRecentlyViewed() {
+  state.recentlyViewed = [];
+  persist(STORAGE_KEYS.recentlyViewed, []);
+  emit();
 }
 
 export function setAdminTab(tab) {

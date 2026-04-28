@@ -28,6 +28,8 @@ import {
   registerAccount,
   removeFromCart,
   resetPassword,
+  pushRecentlyViewed,
+  clearRecentlyViewed,
   saveProduct,
   savePromotion,
   saveSupplier,
@@ -473,6 +475,59 @@ function startDealsCountdown() {
   dealsCountdownTimer = setInterval(tick, 1000);
 }
 
+const RECENT_LABELS = {
+  en: { title: "Recently viewed", lead: "Pick up where you left off.", clear: "Clear", view: "View" },
+  fr: { title: "Récemment consultés", lead: "Reprenez là où vous vous êtes arrêté.", clear: "Effacer", view: "Voir" },
+  rw: { title: "Ibyabonetse vuba", lead: "Komeza aho wari ugeze.", clear: "Siba", view: "Reba" },
+};
+
+function renderRecentlyViewed(state, tr) {
+  const ids = Array.isArray(state.recentlyViewed) ? state.recentlyViewed : [];
+  if (!ids.length) return "";
+  const productById = new Map((state.products || []).map((p) => [Number(p.id), p]));
+  const items = ids.map((id) => productById.get(Number(id))).filter(Boolean).slice(0, 10);
+  if (!items.length) return "";
+  const labels = RECENT_LABELS[state.language] || RECENT_LABELS.en;
+  return `
+    <section class="section recently-viewed" id="recently-viewed">
+      <div class="recently-viewed__header">
+        <div>
+          <h2 class="section__title">${labels.title}</h2>
+          <p class="section__lead">${labels.lead}</p>
+        </div>
+        <button type="button" class="button button--ghost button--sm" id="recently-viewed-clear">${labels.clear}</button>
+      </div>
+      <div class="recently-viewed__rail" data-recently-viewed-rail>
+        ${items.map((product) => renderRecentlyViewedItem(product, labels, state)).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderRecentlyViewedItem(product, labels, state) {
+  const promo = getActivePromotion(product.id, state.promotions || []);
+  const effective = promo
+    ? Math.max(0, Math.round(Number(product.price) * (1 - Number(promo.percent) / 100)))
+    : Number(product.price);
+  return `
+    <a class="recent-card" href="#/product/${product.id}" aria-label="${escapeHtml(product.name)}">
+      <div class="recent-card__media">
+        ${promo ? `<span class="recent-card__badge">-${Number(promo.percent)}%</span>` : ""}
+        <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy" />
+      </div>
+      <div class="recent-card__body">
+        <span class="recent-card__category">${renderCategoryLabel(state.language, product.category)}</span>
+        <span class="recent-card__name">${escapeHtml(product.name)}</span>
+        <span class="recent-card__price-row">
+          ${promo ? `<span class="recent-card__was">${formatPrice(product.price)}</span>` : ""}
+          <strong class="recent-card__price">${formatPrice(effective)}</strong>
+        </span>
+        <span class="recent-card__cta">${labels.view} <span aria-hidden="true">&rarr;</span></span>
+      </div>
+    </a>
+  `;
+}
+
 function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
   const topCategories = categories.slice(0, 6);
   const featured = filteredProducts.slice(0, 18);
@@ -643,6 +698,8 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
             .join("")}
         </div>
       </section>
+
+      ${renderRecentlyViewed(state, tr)}
 
       <section class="section" id="catalog">
         <div class="section__header">
@@ -2268,6 +2325,12 @@ function renderFooter(tr) {
 
 function bindEvents(currentRoute) {
   startDealsCountdown();
+  if (currentRoute && currentRoute.name === "product" && currentRoute.id) {
+    pushRecentlyViewed(currentRoute.id);
+  }
+  document.querySelector("#recently-viewed-clear")?.addEventListener("click", () => {
+    clearRecentlyViewed();
+  });
   if (!hasBoundGlobalEvents) {
     let lastScrollY = window.scrollY;
     let ticking = false;

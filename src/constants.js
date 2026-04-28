@@ -19,6 +19,7 @@ export const STORAGE_KEYS = {
   suppliers: "simba.suppliers.v1",
   promotions: "simba.promotions.v1",
   adminTab: "simba.admin-tab.v1",
+  recentlyViewed: "simba.recently-viewed.v1",
 };
 
 export const VAT_RATE = 0.18;
