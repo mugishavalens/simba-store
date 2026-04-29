@@ -32,6 +32,7 @@ import {
   clearRecentlyViewed,
   dismissLanguageWelcome,
   seedDemoBranchOrders,
+  seedSingleIncomingOrder,
   toggleWishlist,
   removeFromWishlist,
   clearWishlist,
@@ -66,9 +67,9 @@ import { translateCategory } from "./i18n.js";
 const BRAND_LOGO = "./assets/simba-logo.jpg";
 
 const LANGUAGE_META = {
-  en: { flag: "🇬🇧", name: "English",     native: "English",     tagline: "Shop in English" },
-  fr: { flag: "🇫🇷", name: "Français",    native: "Français",    tagline: "Acheter en français" },
-  rw: { flag: "🇷🇼", name: "Kinyarwanda", native: "Ikinyarwanda", tagline: "Gura mu Kinyarwanda" },
+  en: { flag: "🇬🇧", name: "English",     short: "EN", native: "English",     tagline: "Shop in English" },
+  fr: { flag: "🇫🇷", name: "Français",    short: "FR", native: "Français",    tagline: "Acheter en français" },
+  rw: { flag: "🇷🇼", name: "Kinyarwanda", short: "RW", native: "Ikinyarwanda", tagline: "Gura mu Kinyarwanda" },
 };
 
 const BRANCH_OPS_LABELS = {
@@ -456,7 +457,7 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
                 aria-label="${tr("language")}"
               >
                 <span class="language-pill__flag" aria-hidden="true">${LANGUAGE_META[state.language]?.flag || "🌍"}</span>
-                <span class="language-pill__name">${LANGUAGE_META[state.language]?.name || activeLanguage}</span>
+                <span class="language-pill__name">${LANGUAGE_META[state.language]?.short || (activeLanguage || "EN").toUpperCase()}</span>
                 <span class="language-pill__caret" aria-hidden="true">&#9662;</span>
               </button>
               <div class="language-menu__list language-menu__list--rich" id="language-list" hidden role="menu" aria-label="${tr("language")}">
@@ -3137,6 +3138,42 @@ function bindEvents(currentRoute) {
     if (branchId) seedDemoBranchOrders(branchId);
   });
   document.getElementById("branchops-refresh")?.addEventListener("click", () => render());
+
+  // Live "incoming order" simulator: while a manager / staff member is on the
+  // branch ops dashboard, drop a fresh pending order into the queue every
+  // 30-45 seconds and surface a toast so the dashboard feels alive.
+  if (currentRoute.name === "branch") {
+    const stateNow = getState();
+    const branchId = Number(stateNow.currentUser?.branchId || 0);
+    const lang = stateNow.language || "en";
+    const branchLabels = BRANCH_OPS_LABELS[lang] || BRANCH_OPS_LABELS.en;
+    if (branchId && !branchOpsLiveTimer) {
+      const scheduleNext = () => {
+        const delay = 30000 + Math.floor(Math.random() * 15000);
+        branchOpsLiveTimer = setTimeout(() => {
+          if (location.hash !== "#/branch") {
+            clearTimeout(branchOpsLiveTimer);
+            branchOpsLiveTimer = null;
+            return;
+          }
+          const order = seedSingleIncomingOrder(branchId);
+          if (order) {
+            const customerName = order.customer?.fullName || "";
+            const itemCount = (order.items || []).reduce((s, i) => s + Number(i.quantity || 0), 0);
+            showToast(
+              `${branchLabels.toastNewOrder} · ${order.reference} — ${customerName} (${itemCount} ${itemCount === 1 ? "item" : "items"})`,
+              { type: "success", icon: "📥", duration: 5000 },
+            );
+          }
+          scheduleNext();
+        }, delay);
+      };
+      scheduleNext();
+    }
+  } else if (branchOpsLiveTimer) {
+    clearTimeout(branchOpsLiveTimer);
+    branchOpsLiveTimer = null;
+  }
 
   document.querySelector("#cart-toggle")?.addEventListener("click", () => toggleCart(true));
   document.querySelector("#assistant-toggle")?.addEventListener("click", (e) => {

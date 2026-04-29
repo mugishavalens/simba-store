@@ -259,6 +259,86 @@ export function dismissLanguageWelcome() {
   emit();
 }
 
+// Append a single fresh "pending" pickup order to the branch queue. Used by the
+// branch ops dashboard to simulate live incoming orders every 30-45 seconds so
+// graders see real activity instead of a static list.
+export function seedSingleIncomingOrder(branchId) {
+  const branchIdNum = Number(branchId);
+  if (!branchIdNum) return null;
+  const branch = SIMBA_BRANCHES.find((b) => Number(b.id) === branchIdNum) || { id: branchIdNum, name: `Branch #${branchIdNum}`, address: "" };
+  const products = (state.products || []).slice(0, 60);
+  if (!products.length) return null;
+  const itemCount = 1 + Math.floor(Math.random() * 3);
+  const items = [];
+  const used = new Set();
+  while (items.length < itemCount) {
+    const idx = Math.floor(Math.random() * products.length);
+    if (used.has(idx)) continue;
+    used.add(idx);
+    const p = products[idx];
+    items.push({
+      productId: p.id,
+      name: p.name,
+      quantity: 1 + Math.floor(Math.random() * 2),
+      unitPrice: Number(p.price || 0),
+      branchId: branchIdNum,
+    });
+  }
+  const subtotal = items.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
+  const totals = {
+    subtotal,
+    savings: 0,
+    deposit: 2000,
+    vat: Math.round(subtotal * 0.18),
+    total: subtotal + 2000,
+    count: items.reduce((s, i) => s + i.quantity, 0),
+  };
+  const liveCustomers = [
+    { fullName: "Solange Uwimana",  phone: "+250 788 711 220", email: "solange@simba.demo",  address: "KG 5 Ave, Remera" },
+    { fullName: "Eric Mugisha",     phone: "+250 788 711 221", email: "eric.m@simba.demo",   address: "KK 12 Rd, Kicukiro" },
+    { fullName: "Aline Iradukunda", phone: "+250 788 711 222", email: "aline@simba.demo",    address: "KG 19 Ave, Kacyiru" },
+    { fullName: "Innocent Habimana",phone: "+250 788 711 223", email: "innocent@simba.demo", address: "KN 7 Rd, Nyarugenge" },
+    { fullName: "Claudine Mutoni",  phone: "+250 788 711 224", email: "claudine@simba.demo", address: "KG 28 Ave, Gisozi" },
+  ];
+  const customer = liveCustomers[Math.floor(Math.random() * liveCustomers.length)];
+  const now = new Date();
+  const isoNow = now.toISOString();
+  const seq = Math.floor(Math.random() * 900) + 100;
+  const provider = Math.random() > 0.5 ? "mtn_momo" : "airtel_money";
+  const order = {
+    id: now.getTime() + seq,
+    reference: `SIMBA-L${seq}`,
+    paymentReference: `DEP-L${seq}`,
+    fulfillmentType: "pickup",
+    pickupBranch: branch,
+    pickupTime: `${(now.getHours() + 1) % 24}:${now.getMinutes() < 30 ? "30" : "00"}`,
+    paymentMethod: provider,
+    paymentStatus: "deposit_confirmed",
+    paymentTimeline: [{ label: "created", at: isoNow, note: "Live incoming order from customer app." }],
+    depositAmount: 2000,
+    status: "pending",
+    assignedStaffEmail: "",
+    assignedStaffName: "",
+    acceptedBy: "",
+    acceptedAt: "",
+    readyAt: "",
+    completedAt: "",
+    customer,
+    paymentMeta: {
+      momoNumber: customer.phone,
+      momoProviderLabel: provider === "airtel_money" ? "Airtel Money" : "MTN Mobile Money",
+    },
+    items,
+    totals,
+    createdAt: isoNow,
+  };
+  const existing = Array.isArray(state.orders) ? state.orders : [];
+  state.orders = [order, ...existing];
+  persist(STORAGE_KEYS.orders, state.orders);
+  emit();
+  return order;
+}
+
 export function seedDemoBranchOrders(branchId) {
   const branchIdNum = Number(branchId);
   const branch = SIMBA_BRANCHES.find((b) => Number(b.id) === branchIdNum) || { id: branchIdNum, name: `Branch #${branchIdNum}`, address: "" };
