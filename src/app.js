@@ -31,6 +31,7 @@ import {
   pushRecentlyViewed,
   clearRecentlyViewed,
   dismissLanguageWelcome,
+  seedDemoBranchOrders,
   toggleWishlist,
   removeFromWishlist,
   clearWishlist,
@@ -68,6 +69,114 @@ const LANGUAGE_META = {
   en: { flag: "🇬🇧", name: "English",     native: "English",     tagline: "Shop in English" },
   fr: { flag: "🇫🇷", name: "Français",    native: "Français",    tagline: "Acheter en français" },
   rw: { flag: "🇷🇼", name: "Kinyarwanda", native: "Ikinyarwanda", tagline: "Gura mu Kinyarwanda" },
+};
+
+const BRANCH_OPS_LABELS = {
+  en: {
+    nav: "Branch operations",
+    eyebrow: "Branch operations",
+    title: "Live order desk",
+    lead: "Manage today's pickup queue for your branch — accept new orders, assign staff, mark them ready and complete the pickup.",
+    notAuthorized: "This dashboard is for branch managers and staff. Sign in with a manager or staff account to continue.",
+    signIn: "Sign in",
+    todayHeading: "Today at a glance",
+    pendingLabel: "Pending",
+    inProgressLabel: "In progress",
+    readyLabel: "Ready for pickup",
+    completedLabel: "Completed today",
+    revenueLabel: "Revenue today",
+    seed: "Load demo orders",
+    refresh: "Refresh",
+    columns: {
+      pending:   "Pending",
+      accepted:  "Accepted",
+      assigned:  "Preparing",
+      ready:     "Ready for pickup",
+      completed: "Completed",
+    },
+    actions: { accept: "Accept", assign: "Start preparing", ready: "Mark ready", complete: "Complete pickup", noShow: "No-show" },
+    empty: "No orders in this column.",
+    emptyAll: "No orders yet for your branch. Click \"Load demo orders\" to populate the kanban with sample orders.",
+    branchTag: "Branch",
+    customerTag: "Customer",
+    pickupTag: "Pickup",
+    itemsTag: "Items",
+    payTag: "Payment",
+    lowStockTitle: "Low stock at this branch",
+    lowStockEmpty: "All items at safe stock levels.",
+    expiringTitle: "Expiring soon at this branch",
+    expiringEmpty: "Nothing expiring within the alert window.",
+  },
+  fr: {
+    nav: "Opérations agence",
+    eyebrow: "Opérations agence",
+    title: "File des commandes en direct",
+    lead: "Gérez la file de retrait du jour pour votre agence — acceptez les nouvelles commandes, assignez le personnel, marquez-les prêtes et clôturez le retrait.",
+    notAuthorized: "Ce tableau est réservé aux managers et au personnel d'agence. Connectez-vous avec un compte manager ou staff pour continuer.",
+    signIn: "Se connecter",
+    todayHeading: "Aujourd'hui en un coup d'œil",
+    pendingLabel: "En attente",
+    inProgressLabel: "En cours",
+    readyLabel: "Prêtes",
+    completedLabel: "Terminées aujourd'hui",
+    revenueLabel: "Revenu du jour",
+    seed: "Charger des commandes de démo",
+    refresh: "Actualiser",
+    columns: {
+      pending:   "En attente",
+      accepted:  "Acceptées",
+      assigned:  "En préparation",
+      ready:     "Prêtes au retrait",
+      completed: "Terminées",
+    },
+    actions: { accept: "Accepter", assign: "Préparer", ready: "Marquer prête", complete: "Clôturer", noShow: "Non venu" },
+    empty: "Aucune commande dans cette colonne.",
+    emptyAll: "Aucune commande pour votre agence. Cliquez sur « Charger des commandes de démo » pour remplir le kanban.",
+    branchTag: "Agence",
+    customerTag: "Client",
+    pickupTag: "Retrait",
+    itemsTag: "Articles",
+    payTag: "Paiement",
+    lowStockTitle: "Stock bas dans cette agence",
+    lowStockEmpty: "Tous les articles sont à un niveau sûr.",
+    expiringTitle: "Expire bientôt dans cette agence",
+    expiringEmpty: "Aucun article n'expire dans la période d'alerte.",
+  },
+  rw: {
+    nav: "Imikorere y'ishami",
+    eyebrow: "Imikorere y'ishami",
+    title: "Urutonde rwa commandes uyu munsi",
+    lead: "Genzura urutonde rwo guhabwa ibicuruzwa uyu munsi mu ishami ryawe — emera commandes nshya, gabira abakozi, andika ko zikwiye gufatwa hanyuma uzihagarike iyo zifashwe.",
+    notAuthorized: "Iyi dashboard ni iy'abayobozi n'abakozi b'ishami gusa. Injira ukoresheje konti ya manager cyangwa staff.",
+    signIn: "Injira",
+    todayHeading: "Uyu munsi mu ncamake",
+    pendingLabel: "Zitegereje",
+    inProgressLabel: "Mu kazi",
+    readyLabel: "Ziteguye",
+    completedLabel: "Zarangiye uyu munsi",
+    revenueLabel: "Inyungu y'uyu munsi",
+    seed: "Shyiramo commandes z'urugero",
+    refresh: "Vugurura",
+    columns: {
+      pending:   "Zitegereje",
+      accepted:  "Zemewe",
+      assigned:  "Zitegurwa",
+      ready:     "Ziteguye gufatwa",
+      completed: "Zarangiye",
+    },
+    actions: { accept: "Emera", assign: "Tangira gutegura", ready: "Garagaza ko ziteguye", complete: "Soza", noShow: "Ntiyaje" },
+    empty: "Nta commande iri muri iri tanga.",
+    emptyAll: "Nta commande iri mu ishami ryawe. Kanda \"Shyiramo commandes z'urugero\" wuzuze kanban.",
+    branchTag: "Ishami",
+    customerTag: "Umukiriya",
+    pickupTag: "Igihe cyo gufata",
+    itemsTag: "Ibintu",
+    payTag: "Kwishyura",
+    lowStockTitle: "Ibicuruzwa biri hasi muri iri shami",
+    lowStockEmpty: "Ibicuruzwa byose biri ku rwego rwiza.",
+    expiringTitle: "Bizarangira vuba muri iri shami",
+    expiringEmpty: "Nta kintu kizarangira mu gihe cy'inkazi.",
+  },
 };
 
 const LANGUAGE_WELCOME = {
@@ -131,6 +240,9 @@ function renderCategoryLabel(language, category) {
 function renderLanguageWelcome(state) {
   if (state.languageWelcomeSeen) return "";
   if (!state.products || !state.products.length) return "";
+  // Only show on the home route — don't interrupt deep links to product/branch/account/etc.
+  const currentRoute = route();
+  if (currentRoute.name !== "home") return "";
   const labels = LANGUAGE_WELCOME[state.language] || LANGUAGE_WELCOME.en;
   return `
     <div class="lang-welcome" id="lang-welcome" role="dialog" aria-modal="true" aria-labelledby="lang-welcome-title">
@@ -198,6 +310,8 @@ function render() {
     view = renderAccountView(state, cartSummary, tr);
   } else if (currentRoute.name === "admin") {
     view = renderAdminView(state, filteredProducts, tr);
+  } else if (currentRoute.name === "branch") {
+    view = renderBranchOpsView(state, tr);
   } else {
     view = renderHomeView(state, categories, filteredProducts, cartSummary, tr);
   }
@@ -278,9 +392,9 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
                   )
                   .join("")
               : isAdmin
-                ? `
-                  <a class="main-nav__link" href="#/admin">${tr("adminDashboard")}</a>
-                `
+                ? (state.currentUser?.role === "admin"
+                    ? `<a class="main-nav__link" href="#/admin">${tr("adminDashboard")}</a>`
+                    : `<a class="main-nav__link" href="#/branch">${BRANCH_OPS_LABELS[state.language]?.nav || BRANCH_OPS_LABELS.en.nav}</a>`)
                 : `
                   <a class="main-nav__link" href="#branches">${tr("navBranches")}</a>
                   <a class="main-nav__link" href="#support">${tr("navSupport")}</a>
@@ -1542,6 +1656,17 @@ function renderAccountView(state, cartSummary, tr) {
             <a class="button button--primary" href="#wishlist" style="margin-top:0.5rem">♥ ${getWishlistLabels(state.language).view}</a>
           </article>
           ${
+            state.currentUser?.role === "manager" || state.currentUser?.role === "staff"
+              ? `
+                <article class="feature-card">
+                  <h3>${(BRANCH_OPS_LABELS[state.language] || BRANCH_OPS_LABELS.en).eyebrow}</h3>
+                  <p>${(BRANCH_OPS_LABELS[state.language] || BRANCH_OPS_LABELS.en).lead}</p>
+                  <a class="button button--primary" href="#/branch" style="margin-top:0.5rem">📋 ${(BRANCH_OPS_LABELS[state.language] || BRANCH_OPS_LABELS.en).nav}</a>
+                </article>
+              `
+              : ""
+          }
+          ${
             state.currentUser?.role === "customer"
               ? `
                 <article class="feature-card">
@@ -2292,6 +2417,157 @@ function renderAdminCustomersTab(state, customers, tr) {
   `;
 }
 
+function renderBranchOpsView(state, tr) {
+  const labels = BRANCH_OPS_LABELS[state.language] || BRANCH_OPS_LABELS.en;
+  const role = state.currentUser?.role;
+  const isBranchUser = state.isAuthenticated && (role === "manager" || role === "staff");
+
+  if (!isBranchUser) {
+    return `
+      <main class="auth-layout">
+        <section class="auth-panel">
+          <div class="banner">
+            <h3>${labels.eyebrow}</h3>
+            <p>${labels.notAuthorized}</p>
+            <p class="muted" style="margin-top:0.5rem">${tr("demoAccountsBody")}</p>
+            <a class="button button--primary" href="#/auth/signin" style="margin-top:0.75rem">${labels.signIn}</a>
+          </div>
+        </section>
+      </main>
+    `;
+  }
+
+  const branchId = Number(state.currentUser?.branchId || 0);
+  const branch = SIMBA_BRANCHES?.find((b) => Number(b.id) === branchId) || { id: branchId, name: state.currentUser?.fullName || "Your branch", address: "" };
+  const allOrders = Array.isArray(state.orders) ? state.orders : [];
+  const branchOrders = allOrders.filter((o) => Number(o.pickupBranch?.id) === branchId);
+
+  // Today stats
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const isToday = (o) => String(o.createdAt || "").slice(0, 10) === todayKey;
+  const todayOrders = branchOrders.filter(isToday);
+  const todayPending = todayOrders.filter((o) => o.status === "pending").length;
+  const todayInProgress = todayOrders.filter((o) => o.status === "accepted" || o.status === "assigned").length;
+  const todayReady = todayOrders.filter((o) => o.status === "ready").length;
+  const todayCompleted = todayOrders.filter((o) => o.status === "completed").length;
+  const todayRevenue = todayOrders
+    .filter((o) => o.status === "completed")
+    .reduce((sum, o) => sum + Number(o.totals?.total || 0), 0);
+
+  const COLUMNS = [
+    { id: "pending",   actions: [{ key: "accept",   action: "accept" }] },
+    { id: "accepted",  actions: [{ key: "assign",   action: "assign" }] },
+    { id: "assigned",  actions: [{ key: "ready",    action: "ready"  }] },
+    { id: "ready",     actions: [{ key: "complete", action: "complete" }, { key: "noShow", action: "no_show" }] },
+    { id: "completed", actions: [] },
+  ];
+
+  const renderOrderCard = (o) => {
+    const itemsLine = (o.items || [])
+      .slice(0, 3)
+      .map((it) => `${escapeHtml(it.name || "Item")} × ${Number(it.quantity || 0)}`)
+      .join(", ");
+    const more = (o.items || []).length > 3 ? ` +${(o.items || []).length - 3}` : "";
+    const col = COLUMNS.find((c) => c.id === o.status);
+    const actionButtons = (col?.actions || [])
+      .map((a) => {
+        const variant = a.key === "noShow" ? "ghost" : "primary";
+        return `<button class="button button--${variant} button--sm" data-order-action="${a.action}" data-order-id="${o.id}">${labels.actions[a.key]}</button>`;
+      })
+      .join("");
+    const minutesAgo = Math.max(0, Math.round((Date.now() - new Date(o.createdAt || Date.now()).getTime()) / 60000));
+    return `
+      <article class="branchops-card branchops-card--${o.status}">
+        <header class="branchops-card__head">
+          <div>
+            <strong>${escapeHtml(o.customer?.fullName || "Customer")}</strong>
+            <div class="branchops-card__ref">${escapeHtml(o.reference || "")} · ${minutesAgo}m</div>
+          </div>
+          <strong class="branchops-card__total">${formatPrice(Number(o.totals?.total || 0))}</strong>
+        </header>
+        <div class="branchops-card__row"><span>🕒 ${labels.pickupTag}</span><span>${escapeHtml(o.pickupTime || "—")}</span></div>
+        <div class="branchops-card__row"><span>📞</span><span>${escapeHtml(o.customer?.phone || "—")}</span></div>
+        <div class="branchops-card__row"><span>🛒 ${labels.itemsTag}</span><span class="branchops-card__items">${itemsLine}${more}</span></div>
+        <div class="branchops-card__row"><span>💳 ${labels.payTag}</span><span>${escapeHtml(o.paymentMethod || "—")}</span></div>
+        ${actionButtons ? `<div class="branchops-card__actions">${actionButtons}</div>` : ""}
+      </article>
+    `;
+  };
+
+  // Low stock + expiring at this branch
+  const products = state.products || [];
+  const lowStock = products
+    .filter((p) => Number(p.branchStock?.[branchId] || 0) <= Number(p.minStock || DEFAULT_MIN_STOCK))
+    .slice(0, 8);
+  const todayMs = Date.now();
+  const expiring = products
+    .filter((p) => {
+      if (!p.expiry) return false;
+      const days = (new Date(p.expiry).getTime() - todayMs) / (1000 * 60 * 60 * 24);
+      return days >= 0 && days <= EXPIRY_ALERT_DAYS && Number(p.branchStock?.[branchId] || 0) > 0;
+    })
+    .slice(0, 8);
+
+  return `
+    <main class="shell branchops">
+      <header class="branchops__hero">
+        <div class="eyebrow">${labels.eyebrow}</div>
+        <h1>${labels.title}</h1>
+        <p class="section__lead">${labels.lead}</p>
+        <div class="branchops__hero-meta">
+          <span class="badge badge--green">📍 ${escapeHtml(branch.name || "")}</span>
+          <span class="badge">${escapeHtml(state.currentUser?.fullName || "")} · ${escapeHtml(role)}</span>
+          <button class="button button--ghost button--sm" id="branchops-seed">${labels.seed}</button>
+          <button class="button button--ghost button--sm" id="branchops-refresh">${labels.refresh}</button>
+        </div>
+      </header>
+
+      <section class="branchops__stats">
+        <div class="branchops__stat"><span>${labels.pendingLabel}</span><strong>${todayPending}</strong></div>
+        <div class="branchops__stat"><span>${labels.inProgressLabel}</span><strong>${todayInProgress}</strong></div>
+        <div class="branchops__stat"><span>${labels.readyLabel}</span><strong>${todayReady}</strong></div>
+        <div class="branchops__stat"><span>${labels.completedLabel}</span><strong>${todayCompleted}</strong></div>
+        <div class="branchops__stat branchops__stat--accent"><span>${labels.revenueLabel}</span><strong>${formatPrice(todayRevenue)}</strong></div>
+      </section>
+
+      ${branchOrders.length === 0 ? `<div class="banner branchops__empty"><p>${labels.emptyAll}</p></div>` : ""}
+
+      <section class="branchops__board">
+        ${COLUMNS.map((col) => {
+          const colOrders = branchOrders.filter((o) => o.status === col.id)
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          return `
+            <div class="branchops__col branchops__col--${col.id}">
+              <header class="branchops__col-head">
+                <span class="branchops__col-title">${labels.columns[col.id]}</span>
+                <span class="branchops__col-count">${colOrders.length}</span>
+              </header>
+              <div class="branchops__col-body">
+                ${colOrders.length ? colOrders.map(renderOrderCard).join("") : `<p class="branchops__col-empty">${labels.empty}</p>`}
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </section>
+
+      <section class="branchops__alerts">
+        <article class="summary-card">
+          <h3>${labels.lowStockTitle}</h3>
+          ${lowStock.length
+            ? `<ul class="branchops__alert-list">${lowStock.map((p) => `<li><span>${escapeHtml(p.name)}</span><strong>${Number(p.branchStock?.[branchId] || 0)}</strong></li>`).join("")}</ul>`
+            : `<p class="muted">${labels.lowStockEmpty}</p>`}
+        </article>
+        <article class="summary-card">
+          <h3>${labels.expiringTitle}</h3>
+          ${expiring.length
+            ? `<ul class="branchops__alert-list">${expiring.map((p) => `<li><span>${escapeHtml(p.name)}</span><strong>${escapeHtml(String(p.expiry).slice(0, 10))}</strong></li>`).join("")}</ul>`
+            : `<p class="muted">${labels.expiringEmpty}</p>`}
+        </article>
+      </section>
+    </main>
+  `;
+}
+
 function renderAdminOrdersTab(state, recentOrders, tr) {
   const hasLocations = recentOrders.some((order) => resolveOrderMapLocation(order));
   return `
@@ -2636,6 +2912,13 @@ function bindEvents(currentRoute) {
   document.querySelectorAll("[data-lang-welcome-dismiss]").forEach((el) =>
     el.addEventListener("click", () => dismissLanguageWelcome()),
   );
+
+  // Branch operations dashboard
+  document.getElementById("branchops-seed")?.addEventListener("click", () => {
+    const branchId = Number(getState().currentUser?.branchId || 0);
+    if (branchId) seedDemoBranchOrders(branchId);
+  });
+  document.getElementById("branchops-refresh")?.addEventListener("click", () => render());
 
   document.querySelector("#cart-toggle")?.addEventListener("click", () => toggleCart(true));
   document.querySelector("#assistant-toggle")?.addEventListener("click", (e) => {

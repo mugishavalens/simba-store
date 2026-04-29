@@ -117,5 +117,6 @@ export function route() {
   if (path === "account") return { name: "account" };
   if (path === "admin") return { name: "admin" };
   if (path === "clients") return { name: "clients" };
+  if (path === "branch") return { name: "branch" };
   return { name: "home" };
 }

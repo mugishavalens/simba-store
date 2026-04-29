@@ -57,3 +57,21 @@ Customers can save products to a personal wishlist that lives in `localStorage` 
 - New i18n keys `brandSuperMarket` / `brandOnlineShop` added for all three languages; brand lockup uses them via `tr(...)`.
 - Footer social links got `aria-label` attributes (brand names kept as text).
 - All new CSS appended to `styles/main.css` under section comment headers; respects `prefers-reduced-motion` and dark theme.
+
+## Phase 2 — Branch Operations dashboard (complete)
+- New route `#/branch` registered in `src/utils.js` and dispatched in `render()` to `renderBranchOpsView()`.
+- Role gate: only `manager` and `staff` accounts see the kanban; everyone else gets a banner with demo credentials and a Sign-in CTA.
+- Topbar nav and account dashboard tile show **Branch operations** for `manager`/`staff` (admins still see "Admin dashboard").
+- Kanban with five columns: **Pending → Accepted → Preparing (assigned) → Ready for pickup → Completed**, each card showing customer, reference, time elapsed, pickup time, phone, items, payment method, total, and status-specific action buttons.
+- Action buttons reuse the existing `data-order-action` plumbing wired to `updateOrderWorkflow` (Accept / Start preparing / Mark ready / Complete pickup / No-show).
+- Today-stats strip: Pending, In progress, Ready, Completed today, Revenue today (only completed orders).
+- Branch-scoped low-stock and expiring-soon panels (filtered by `branchStock[branchId]` and `expiry` within `EXPIRY_ALERT_DAYS`).
+- "Load demo orders" button calls `seedDemoBranchOrders(branchId)` in `src/store.js`, which generates 6 sample orders across all five statuses using real products from the catalog and persists them to `STORAGE_KEYS.orders`.
+- Inline `BRANCH_OPS_LABELS` for `en` / `fr` / `rw` (kept out of `src/i18n.js` to follow the existing label-object pattern).
+- Welcome modal now only shows on the home route so deep links to `#/branch`, `#/account`, `#/product/...` aren't interrupted.
+- All kanban CSS appended to `styles/main.css`; responsive (5 cols → 2 → 1), supports dark theme and `prefers-reduced-motion`.
+
+### Demo credentials
+- Admin: `admin@simba.rw` / `SimbaAdmin@2026`
+- Manager (Remera): `manager.remera@simba.rw` / `SimbaBranch@2026`
+- Staff (Remera): `staff.remera@simba.rw` / `SimbaBranch@2026`

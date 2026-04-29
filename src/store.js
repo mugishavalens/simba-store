@@ -259,6 +259,81 @@ export function dismissLanguageWelcome() {
   emit();
 }
 
+export function seedDemoBranchOrders(branchId) {
+  const branchIdNum = Number(branchId);
+  const branch = SIMBA_BRANCHES.find((b) => Number(b.id) === branchIdNum) || { id: branchIdNum, name: `Branch #${branchIdNum}`, address: "" };
+  // Pick a sample of real products for this branch
+  const products = (state.products || []).slice(0, 50);
+  const pickProducts = (n) => {
+    const out = [];
+    const used = new Set();
+    while (out.length < n && out.length < products.length) {
+      const idx = Math.floor(Math.random() * products.length);
+      if (used.has(idx)) continue;
+      used.add(idx);
+      out.push(products[idx]);
+    }
+    return out;
+  };
+  const buildItems = (count) =>
+    pickProducts(count).map((p) => ({
+      productId: p.id,
+      name: p.name,
+      quantity: 1 + Math.floor(Math.random() * 3),
+      unitPrice: Number(p.price || 0),
+      branchId: branchIdNum,
+    }));
+  const computeTotals = (items) => {
+    const subtotal = items.reduce((sum, it) => sum + Number(it.unitPrice || 0) * Number(it.quantity || 0), 0);
+    return { subtotal, savings: 0, deposit: 2000, vat: Math.round(subtotal * 0.18), total: subtotal + 2000, count: items.reduce((s, i) => s + i.quantity, 0) };
+  };
+  const fakeCustomers = [
+    { fullName: "Alice Mukamana",  phone: "+250 788 123 456", email: "alice@simba.demo",  address: "KG 9 Ave, Remera" },
+    { fullName: "Patrick Hakizimana", phone: "+250 788 234 567", email: "patrick@simba.demo", address: "KK 15 Rd, Gikondo" },
+    { fullName: "Grace Uwase",     phone: "+250 788 345 678", email: "grace@simba.demo",   address: "KG 11 Ave, Kimironko" },
+    { fullName: "Eric Niyonshuti", phone: "+250 788 456 789", email: "eric@simba.demo",    address: "KN 3 Rd, Nyamirambo" },
+    { fullName: "Diane Ingabire",  phone: "+250 788 567 890", email: "diane@simba.demo",   address: "KG 7 Ave, Kacyiru" },
+    { fullName: "Jean Bosco",       phone: "+250 788 678 901", email: "bosco@simba.demo",   address: "KK 737 St, Kanombe" },
+  ];
+  const statuses = ["pending", "pending", "accepted", "assigned", "ready", "completed"];
+  const now = Date.now();
+  const seedOrders = statuses.map((status, i) => {
+    const items = buildItems(1 + Math.floor(Math.random() * 3));
+    const totals = computeTotals(items);
+    const customer = fakeCustomers[i % fakeCustomers.length];
+    const minutesAgo = (statuses.length - i) * 12 + Math.floor(Math.random() * 6);
+    const createdAt = new Date(now - minutesAgo * 60_000).toISOString();
+    return {
+      id: now + i,
+      reference: `SIMBA-D${String(i + 1).padStart(3, "0")}`,
+      paymentReference: `DEP-${String(i + 1).padStart(4, "0")}`,
+      fulfillmentType: "pickup",
+      pickupBranch: branch,
+      pickupTime: `${10 + i}:${i % 2 === 0 ? "00" : "30"}`,
+      paymentMethod: i % 2 === 0 ? "momo" : "card",
+      paymentStatus: "deposit_confirmed",
+      paymentTimeline: [{ label: "created", at: createdAt, note: "Demo order seeded for branch dashboard." }],
+      depositAmount: 2000,
+      status,
+      assignedStaffEmail: status === "assigned" || status === "ready" ? "staff.remera@simba.rw" : "",
+      assignedStaffName: status === "assigned" || status === "ready" ? "Staff Demo" : "",
+      acceptedBy: status !== "pending" ? "Manager Demo" : "",
+      acceptedAt: status !== "pending" ? createdAt : "",
+      readyAt: status === "ready" || status === "completed" ? createdAt : "",
+      completedAt: status === "completed" ? createdAt : "",
+      customer,
+      paymentMeta: {},
+      items,
+      totals,
+      createdAt,
+    };
+  });
+  const existing = Array.isArray(state.orders) ? state.orders : [];
+  state.orders = [...seedOrders, ...existing];
+  persist(STORAGE_KEYS.orders, state.orders);
+  emit();
+}
+
 export function setSearch(value) {
   state.search = value;
   emit();
