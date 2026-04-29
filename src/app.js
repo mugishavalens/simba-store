@@ -111,6 +111,12 @@ const BRANCH_OPS_LABELS = {
     toastSeeded: "Demo orders loaded into the live queue",
     toastNewOrder: "📥 New order received",
     toastStatusUpdated: "Order status updated",
+    acceptAll: "Accept all pending",
+    acceptAllToast: "All pending orders accepted",
+    acceptAllNothing: "No pending orders to accept",
+    salesChartTitle: "Daily revenue (last 7 days)",
+    salesChartEmpty: "No completed orders yet — revenue chart will appear once orders are picked up.",
+    salesChartLegend: "RWF earned per day from completed pickups",
   },
   fr: {
     nav: "Opérations agence",
@@ -150,6 +156,12 @@ const BRANCH_OPS_LABELS = {
     toastSeeded: "Commandes de démo chargées dans la file en direct",
     toastNewOrder: "📥 Nouvelle commande reçue",
     toastStatusUpdated: "Statut de la commande mis à jour",
+    acceptAll: "Tout accepter",
+    acceptAllToast: "Toutes les commandes en attente ont été acceptées",
+    acceptAllNothing: "Aucune commande en attente à accepter",
+    salesChartTitle: "Revenu quotidien (7 derniers jours)",
+    salesChartEmpty: "Aucune commande terminée — le graphique apparaîtra dès le premier retrait.",
+    salesChartLegend: "RWF gagnés par jour grâce aux retraits terminés",
   },
   rw: {
     nav: "Imikorere y'ishami",
@@ -189,6 +201,12 @@ const BRANCH_OPS_LABELS = {
     toastSeeded: "Commandes z'urugero zashyizwe ku rutonde",
     toastNewOrder: "📥 Commande nshya yinjiye",
     toastStatusUpdated: "Imimerere ya commande yahinduwe",
+    acceptAll: "Emera zose zitegereje",
+    acceptAllToast: "Commandes zose zitegereje zemejwe",
+    acceptAllNothing: "Nta commande itegereje yo kwemera",
+    salesChartTitle: "Amafaranga yinjiye buri munsi (iminsi 7 ishize)",
+    salesChartEmpty: "Nta commande zarangiye — ishusho izaboneka iyo commande ya mbere imaze gufatwa.",
+    salesChartLegend: "RWF zinjiye ku munsi mu commandes zarangiye",
   },
 };
 
@@ -2672,6 +2690,20 @@ function renderBranchOpsView(state, tr) {
     .filter((o) => o.status === "completed")
     .reduce((sum, o) => sum + Number(o.totals?.total || 0), 0);
 
+  // Last 7 days of completed-pickup revenue for the sales chart.
+  const dayLabelFmt = new Intl.DateTimeFormat(state.language === "fr" ? "fr-RW" : state.language === "rw" ? "rw-RW" : "en-RW", { weekday: "short" });
+  const last7Days = Array.from({ length: 7 }, (_, idx) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - idx));
+    const key = d.toISOString().slice(0, 10);
+    const revenue = branchOrders
+      .filter((o) => o.status === "completed" && String(o.createdAt || "").slice(0, 10) === key)
+      .reduce((sum, o) => sum + Number(o.totals?.total || 0), 0);
+    return { key, label: dayLabelFmt.format(d), revenue };
+  });
+  const maxDayRevenue = Math.max(1, ...last7Days.map((d) => d.revenue));
+  const totalWeekRevenue = last7Days.reduce((sum, d) => sum + d.revenue, 0);
+
   const COLUMNS = [
     { id: "pending",   actions: [{ key: "accept",   action: "accept" }] },
     { id: "accepted",  actions: [{ key: "assign",   action: "assign" }] },
@@ -2736,6 +2768,7 @@ function renderBranchOpsView(state, tr) {
           <span class="branchops__live">${labels.liveLabel || "Live"}</span>
           <span class="badge badge--green">📍 ${escapeHtml(branch.name || "")}</span>
           <span class="badge">${escapeHtml(state.currentUser?.fullName || "")} · ${escapeHtml(role)}</span>
+          ${todayPending > 0 ? `<button class="button button--primary button--sm" id="branchops-accept-all">⚡ ${labels.acceptAll} (${todayPending})</button>` : ""}
           <button class="button button--ghost button--sm" id="branchops-seed">${labels.seed}</button>
           <button class="button button--ghost button--sm" id="branchops-refresh">${labels.refresh}</button>
         </div>
@@ -2750,6 +2783,31 @@ function renderBranchOpsView(state, tr) {
       </section>
 
       ${branchOrders.length === 0 ? `<div class="banner branchops__empty"><p>${labels.emptyAll}</p></div>` : ""}
+
+      <section class="branchops__sales-chart" aria-label="${labels.salesChartTitle}">
+        <header class="branchops__sales-head">
+          <h3>📊 ${labels.salesChartTitle}</h3>
+          <span class="branchops__sales-total">${formatPrice(totalWeekRevenue)}</span>
+        </header>
+        ${
+          totalWeekRevenue > 0
+            ? `<div class="branchops__sales-bars" role="img" aria-label="${labels.salesChartLegend}">
+                ${last7Days.map((d) => {
+                  const heightPct = Math.max(2, Math.round((d.revenue / maxDayRevenue) * 100));
+                  const isToday = d.key === todayKey;
+                  return `
+                    <div class="branchops__sales-bar ${isToday ? "branchops__sales-bar--today" : ""}" title="${escapeHtml(d.label)} · ${formatPrice(d.revenue)}">
+                      <span class="branchops__sales-bar-value">${d.revenue > 0 ? formatPrice(d.revenue).replace(/\s?RWF$/, "") : ""}</span>
+                      <span class="branchops__sales-bar-fill" style="height:${heightPct}%"></span>
+                      <span class="branchops__sales-bar-label">${escapeHtml(d.label)}</span>
+                    </div>
+                  `;
+                }).join("")}
+              </div>
+              <p class="branchops__sales-legend muted">${labels.salesChartLegend}</p>`
+            : `<p class="muted">${labels.salesChartEmpty}</p>`
+        }
+      </section>
 
       <section class="branchops__board">
         ${COLUMNS.map((col) => {
@@ -3138,6 +3196,31 @@ function bindEvents(currentRoute) {
     if (branchId) seedDemoBranchOrders(branchId);
   });
   document.getElementById("branchops-refresh")?.addEventListener("click", () => render());
+
+  document.getElementById("branchops-accept-all")?.addEventListener("click", async () => {
+    const stateNow = getState();
+    const lang = stateNow.language || "en";
+    const branchLabels = BRANCH_OPS_LABELS[lang] || BRANCH_OPS_LABELS.en;
+    const branchId = Number(stateNow.currentUser?.branchId || 0);
+    const pendingOrders = (stateNow.orders || []).filter(
+      (o) => Number(o.pickupBranch?.id) === branchId && o.status === "pending",
+    );
+    if (!pendingOrders.length) {
+      showToast(branchLabels.acceptAllNothing, { type: "info", icon: "ℹ️" });
+      return;
+    }
+    const current = stateNow.currentUser;
+    for (const order of pendingOrders) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateOrderWorkflow({
+        orderId: Number(order.id),
+        action: "accept",
+        actorName: current?.fullName || "Simba Team",
+        actorEmail: current?.email || "",
+      });
+    }
+    showToast(`${branchLabels.acceptAllToast} (${pendingOrders.length})`, { type: "success", icon: "⚡", duration: 4000 });
+  });
 
   // Live "incoming order" simulator: while a manager / staff member is on the
   // branch ops dashboard, drop a fresh pending order into the queue every

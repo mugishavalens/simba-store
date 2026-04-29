@@ -4729,3 +4729,126 @@ body[data-theme="dark"] .deal-card {
 .sms-card__head { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; opacity: 0.85; margin-bottom: 0.5rem; }
 .sms-card__body { font-size: 0.9rem; line-height: 1.5; }
 .sms-card__body strong { color: #fde68a; }
+
+/* === Branch Ops: Sales chart + Accept-all (hackathon enhancements) === */
+.branchops__sales-chart {
+  background: linear-gradient(135deg, #fff7ed 0%, #fef3c7 100%);
+  border: 1px solid #fcd34d;
+  border-radius: 14px;
+  padding: 1.25rem 1.5rem;
+  margin: 1rem 0 1.5rem;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.08);
+}
+[data-theme="dark"] .branchops__sales-chart {
+  background: linear-gradient(135deg, #2a1a05 0%, #3b2410 100%);
+  border-color: #b45309;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+.branchops__sales-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+.branchops__sales-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #92400e;
+}
+[data-theme="dark"] .branchops__sales-head h3 { color: #fcd34d; }
+.branchops__sales-total {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #b45309;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+}
+[data-theme="dark"] .branchops__sales-total {
+  color: #fde68a;
+  background: rgba(0, 0, 0, 0.3);
+}
+.branchops__sales-bars {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.5rem;
+  align-items: end;
+  height: 140px;
+  padding: 0.5rem 0;
+}
+.branchops__sales-bar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  cursor: default;
+}
+.branchops__sales-bar-fill {
+  display: block;
+  width: 100%;
+  max-width: 36px;
+  background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
+  border-radius: 6px 6px 0 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  min-height: 4px;
+}
+.branchops__sales-bar:hover .branchops__sales-bar-fill {
+  opacity: 0.85;
+  transform: scaleY(1.04);
+  transform-origin: bottom;
+}
+.branchops__sales-bar--today .branchops__sales-bar-fill {
+  background: linear-gradient(180deg, #16a34a 0%, #15803d 100%);
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.25);
+}
+.branchops__sales-bar-value {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #78350f;
+  margin-bottom: 0.25rem;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+[data-theme="dark"] .branchops__sales-bar-value { color: #fcd34d; }
+.branchops__sales-bar-label {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #78350f;
+  margin-top: 0.4rem;
+  text-transform: capitalize;
+}
+[data-theme="dark"] .branchops__sales-bar-label { color: #fcd34d; }
+.branchops__sales-bar--today .branchops__sales-bar-label {
+  color: #15803d;
+  font-weight: 700;
+}
+[data-theme="dark"] .branchops__sales-bar--today .branchops__sales-bar-label { color: #4ade80; }
+.branchops__sales-legend {
+  margin: 0.75rem 0 0;
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+#branchops-accept-all {
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%) !important;
+  color: #fff !important;
+  border: none !important;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(22, 163, 74, 0.3);
+}
+#branchops-accept-all:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.4);
+}
+
+@media (max-width: 640px) {
+  .branchops__sales-chart { padding: 1rem; }
+  .branchops__sales-bars { height: 110px; gap: 0.3rem; }
+  .branchops__sales-bar-value { font-size: 0.55rem; }
+  .branchops__sales-bar-label { font-size: 0.65rem; }
+}
