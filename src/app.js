@@ -106,6 +106,10 @@ const BRANCH_OPS_LABELS = {
     lowStockEmpty: "All items at safe stock levels.",
     expiringTitle: "Expiring soon at this branch",
     expiringEmpty: "Nothing expiring within the alert window.",
+    liveLabel: "🟢 Live",
+    toastSeeded: "Demo orders loaded into the live queue",
+    toastNewOrder: "📥 New order received",
+    toastStatusUpdated: "Order status updated",
   },
   fr: {
     nav: "Opérations agence",
@@ -141,6 +145,10 @@ const BRANCH_OPS_LABELS = {
     lowStockEmpty: "Tous les articles sont à un niveau sûr.",
     expiringTitle: "Expire bientôt dans cette agence",
     expiringEmpty: "Aucun article n'expire dans la période d'alerte.",
+    liveLabel: "🟢 En direct",
+    toastSeeded: "Commandes de démo chargées dans la file en direct",
+    toastNewOrder: "📥 Nouvelle commande reçue",
+    toastStatusUpdated: "Statut de la commande mis à jour",
   },
   rw: {
     nav: "Imikorere y'ishami",
@@ -176,6 +184,10 @@ const BRANCH_OPS_LABELS = {
     lowStockEmpty: "Ibicuruzwa byose biri ku rwego rwiza.",
     expiringTitle: "Bizarangira vuba muri iri shami",
     expiringEmpty: "Nta kintu kizarangira mu gihe cy'inkazi.",
+    liveLabel: "🟢 Mu gihe nyacyo",
+    toastSeeded: "Commandes z'urugero zashyizwe ku rutonde",
+    toastNewOrder: "📥 Commande nshya yinjiye",
+    toastStatusUpdated: "Imimerere ya commande yahinduwe",
   },
 };
 
@@ -214,7 +226,20 @@ let navOpen = false;
 let assistantOpen = false;
 let assistantInputState = "";
 let assistantPending = false;
-let checkoutPaymentMethodState = "momo";
+let checkoutPaymentMethodState = "mtn_momo";
+
+// Mobile money STK push simulation modal state.
+// shape: { provider: "mtn"|"airtel", phone, amount, step: 0|1|2|3 }
+let momoProcessingState = null;
+
+// Live toast (auto-dismiss). { type, message, id }
+let liveToast = null;
+let liveToastTimer = null;
+
+// Branch ops "live" simulator
+let branchOpsAutoSeeded = false;
+let branchOpsLastSeenCount = 0;
+let branchOpsLiveTimer = null;
 
 window.addEventListener("hashchange", render);
 subscribe(() => render());
@@ -323,7 +348,13 @@ function render() {
     ${state.cartOpen ? `<div class="cart-overlay" id="cart-overlay"></div>` : ""}
     ${state.cartOpen ? renderCart(state, cartSummary, tr) : ""}
     ${renderLanguageWelcome(state)}
+    ${renderMomoProcessing(state, tr)}
+    ${renderLiveToast()}
   `;
+
+  // Hide the static (pre-hydration) splash now that the SPA is rendering.
+  const splash = document.getElementById("static-splash");
+  if (splash && splash.parentNode) splash.parentNode.removeChild(splash);
 
   bindEvents(currentRoute);
   restoreSearchInputState();
@@ -1175,10 +1206,12 @@ function renderCheckoutView(state, cartSummary, tr) {
   const checkoutFeedback = state.checkoutFeedback
     ? `<p class="auth-feedback auth-feedback--${state.checkoutFeedback.type}">${tr(`checkout_${state.checkoutFeedback.code}`)}</p>`
     : "";
-  const selectedPaymentMethod = checkoutPaymentMethodState || "momo";
+  const selectedPaymentMethod = checkoutPaymentMethodState || "mtn_momo";
   const paymentGuide = getCheckoutPaymentGuide(selectedPaymentMethod, tr);
   const lastOrder = state.lastOrder;
   const depositAmount = Number(state.currentUser?.noShowFlags || 0) >= 2 ? PICKUP_DEPOSIT_RWF * 2 : PICKUP_DEPOSIT_RWF;
+  const isMomoSelected = isMomoMethod(selectedPaymentMethod);
+  const isCardSelected = selectedPaymentMethod === "card";
   return `
     <main class="checkout-layout">
       <section class="checkout-card">
@@ -1189,26 +1222,26 @@ function renderCheckoutView(state, cartSummary, tr) {
           state.orderComplete
             ? `
               <div class="banner">
-                <h3>${tr("orderPlaced")}</h3>
+                <h3>✅ ${tr("orderPlaced")}</h3>
                 <p>${tr("orderPlacedText")}</p>
                 ${
                   lastOrder
                     ? `
                       <div class="checkout-success-meta">
                         <div><strong>${escapeHtml(lastOrder.reference)}</strong></div>
-                        <div class="muted">${escapeHtml(lastOrder.pickupBranch?.name || "")} • ${escapeHtml(lastOrder.pickupTime || "")}</div>
-                        <div class="muted">${escapeHtml(formatPaymentMethodLabel(lastOrder.paymentMethod, tr))} • ${escapeHtml(formatPaymentStatus(lastOrder.paymentStatus, tr))}</div>
+                        <div class="muted">📍 ${escapeHtml(lastOrder.pickupBranch?.name || "")} · 🕒 ${escapeHtml(lastOrder.pickupTime || "")}</div>
+                        <div class="muted">${escapeHtml(formatPaymentMethodLabel(lastOrder.paymentMethod, tr))} · ${escapeHtml(formatPaymentStatus(lastOrder.paymentStatus, tr))}</div>
                         <div class="muted">${escapeHtml(lastOrder.paymentReference || "")}</div>
-                        ${
-                          lastOrder.paymentMeta?.instructions
-                            ? `<p class="muted">${escapeHtml(lastOrder.paymentMeta.instructions)}</p>`
-                            : ""
-                        }
                       </div>
+                      ${renderOrderTimeline(lastOrder, tr)}
+                      ${renderSmsConfirmation(lastOrder, tr)}
                     `
                     : ""
                 }
-                <a class="button button--primary" href="#/">${tr("continueShopping")}</a>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:1rem">
+                  <a class="button button--primary" href="#/">${tr("continueShopping")}</a>
+                  <a class="button button--ghost" href="#/account">${tr("trackOrder")}</a>
+                </div>
               </div>
             `
             : `<form id="checkout-form">
@@ -1251,21 +1284,23 @@ function renderCheckoutView(state, cartSummary, tr) {
                   <label class="checkout-field">
                     <span>${tr("paymentMethod")}</span>
                     <select name="paymentMethod" id="payment-method">
-                      ${["momo", "card"].map((method) => {
+                      ${["mtn_momo", "airtel_money", "card", "cash"].map((method) => {
                         const labelMap = {
-                          momo: tr("paymentMomo"),
-                          card: tr("paymentCard"),
+                          mtn_momo: `🟡 ${tr("paymentMtnMomo")}`,
+                          airtel_money: `🔴 ${tr("paymentAirtelMoney")}`,
+                          card: `💳 ${tr("paymentCard")}`,
+                          cash: `💵 ${tr("paymentCashPickup")}`,
                         };
                         return `<option value="${method}" ${selectedPaymentMethod === method ? "selected" : ""}>${labelMap[method]}</option>`;
                       }).join("")}
                     </select>
                   </label>
                 </div>
-                <label class="checkout-field" id="momo-field">
-                  <span>${tr("momoNumber")}</span>
-                  <input name="momoNumber" placeholder="07XXXXXXXX" />
+                <label class="checkout-field" id="momo-field" style="${isMomoSelected ? "" : "display:none"}">
+                  <span>${tr("momoNumber")} ${selectedPaymentMethod === "airtel_money" ? `<span class="muted">(Airtel)</span>` : selectedPaymentMethod === "mtn_momo" ? `<span class="muted">(MTN)</span>` : ""}</span>
+                  <input name="momoNumber" placeholder="${selectedPaymentMethod === "airtel_money" ? "073XXXXXXX or 075XXXXXXX" : "078XXXXXXX or 079XXXXXXX"}" inputmode="tel" />
                 </label>
-                <div class="checkout-grid" id="card-fields">
+                <div class="checkout-grid" id="card-fields" style="${isCardSelected ? "" : "display:none"}">
                   <label class="checkout-field">
                     <span>${tr("cardholderName")}</span>
                     <input name="cardholderName" placeholder="John Simba" />
@@ -1422,10 +1457,180 @@ function getCheckoutPaymentGuide(paymentMethod, tr) {
       description: tr("paymentCashGuideText"),
     };
   }
+  if (paymentMethod === "airtel_money") {
+    return {
+      title: tr("paymentAirtelGuideTitle"),
+      description: tr("paymentAirtelGuideText"),
+    };
+  }
+  // mtn_momo (default) or legacy "momo"
   return {
-    title: tr("paymentMomoGuideTitle"),
-    description: tr("paymentMomoGuideText"),
+    title: tr("paymentMtnMomoGuideTitle"),
+    description: tr("paymentMtnMomoGuideText"),
   };
+}
+
+function isMomoMethod(method) {
+  return method === "mtn_momo" || method === "airtel_money" || method === "momo";
+}
+
+function momoProvider(method) {
+  return method === "airtel_money" ? "airtel" : "mtn";
+}
+
+function renderOrderTimeline(order, tr) {
+  const status = order.status || "pending";
+  const order_steps = [
+    { key: "placed",     label: tr("timelinePlaced"),    icon: "✅" },
+    { key: "pending",    label: tr("timelinePending"),   icon: "⏳" },
+    { key: "accepted",   label: tr("timelineAccepted"),  icon: "👋" },
+    { key: "assigned",   label: tr("timelineAssigned"),  icon: "📦" },
+    { key: "ready",      label: tr("timelineReady"),     icon: "🛍️" },
+    { key: "completed",  label: tr("timelineCompleted"), icon: "🎉" },
+  ];
+  const order_index = { placed: 0, pending: 1, accepted: 2, assigned: 3, ready: 4, completed: 5 };
+  const currentIdx = order_index[status] ?? 1;
+  return `
+    <ul class="order-timeline" aria-label="${tr("timelineHeading")}">
+      ${order_steps.map((s, i) => {
+        const klass = i < currentIdx ? "order-timeline__step--done" : i === currentIdx ? "order-timeline__step--active" : "";
+        return `
+          <li class="order-timeline__step ${klass}">
+            <span class="order-timeline__icon" aria-hidden="true">${s.icon}</span>
+            <div class="order-timeline__body">
+              <span class="order-timeline__title">${s.label}</span>
+              ${i === currentIdx ? `<span class="order-timeline__meta">${tr("timelineCurrentStep")}</span>` : ""}
+            </div>
+          </li>
+        `;
+      }).join("")}
+    </ul>
+  `;
+}
+
+function renderSmsConfirmation(order, tr) {
+  const phone = order.customer?.phone || "";
+  const reference = order.reference || "";
+  const branchName = order.pickupBranch?.name || "";
+  const pickupTime = order.pickupTime || "";
+  const total = formatPrice(Number(order.totals?.total || 0));
+  const lang = (typeof getState === "function" ? getState().language : "en") || "en";
+  const provider = order.paymentMeta?.momoProviderLabel
+    || (order.paymentMethod === "airtel_money" ? "Airtel Money" : order.paymentMethod === "mtn_momo" ? "MTN MoMo" : "");
+  const body = lang === "rw"
+    ? `Murakoze! Commande <strong>${escapeHtml(reference)}</strong> yemejwe. Igiteranyo: <strong>${total}</strong>${provider ? ` · ${escapeHtml(provider)}` : ""}. Yifate kuri <strong>${escapeHtml(branchName)}</strong> mu gihe cya <strong>${escapeHtml(pickupTime)}</strong>.`
+    : lang === "fr"
+    ? `Merci ! Commande <strong>${escapeHtml(reference)}</strong> confirmée. Total : <strong>${total}</strong>${provider ? ` · ${escapeHtml(provider)}` : ""}. Retrait à <strong>${escapeHtml(branchName)}</strong> entre <strong>${escapeHtml(pickupTime)}</strong>.`
+    : `Thanks! Order <strong>${escapeHtml(reference)}</strong> confirmed. Total: <strong>${total}</strong>${provider ? ` · ${escapeHtml(provider)}` : ""}. Pickup at <strong>${escapeHtml(branchName)}</strong> between <strong>${escapeHtml(pickupTime)}</strong>.`;
+  return `
+    <div class="sms-card" aria-label="${tr("smsConfirmHeading")}">
+      <div class="sms-card__head">📱 ${tr("smsConfirmHeading")} → ${escapeHtml(phone)}</div>
+      <div class="sms-card__body">${body}</div>
+    </div>
+  `;
+}
+
+// ===== Mobile Money STK push simulation modal =====
+function renderMomoProcessing(state, tr) {
+  if (!momoProcessingState) return "";
+  const { provider, phone, amount, step, success, reference } = momoProcessingState;
+  const providerName = provider === "airtel" ? "Airtel Money" : "MTN Mobile Money";
+  const providerClass = provider === "airtel" ? "airtel" : "mtn";
+  const providerEmoji = provider === "airtel" ? "🔴" : "🟡";
+
+  if (success) {
+    return `
+      <div class="momo-modal" role="dialog" aria-modal="true" aria-live="polite">
+        <div class="momo-modal__panel">
+          <div class="momo-modal__success-icon" aria-hidden="true">✓</div>
+          <h2 class="momo-modal__title">${tr("momoSuccessTitle")}</h2>
+          <p class="momo-modal__hint">${tr("momoSuccessHint")}</p>
+          <div class="momo-modal__amount">${formatPrice(amount)}</div>
+          <p class="momo-modal__phone">${escapeHtml(phone)} · ${providerName}</p>
+          ${reference ? `<p class="muted" style="font-size:0.8rem">${tr("momoReference")}: ${escapeHtml(reference)}</p>` : ""}
+        </div>
+      </div>
+    `;
+  }
+
+  const steps = [
+    { key: 0, label: tr("momoStepRequest") },
+    { key: 1, label: tr("momoStepPhone") },
+    { key: 2, label: tr("momoStepPin") },
+    { key: 3, label: tr("momoStepConfirm") },
+  ];
+
+  return `
+    <div class="momo-modal" role="dialog" aria-modal="true" aria-live="polite">
+      <div class="momo-modal__panel">
+        <div class="momo-modal__provider momo-modal__provider--${providerClass}">
+          <span aria-hidden="true">${providerEmoji}</span> ${providerName}
+        </div>
+        <h2 class="momo-modal__title">${tr("momoProcessingTitle")}</h2>
+        <div class="momo-modal__amount">${formatPrice(amount)}</div>
+        <p class="momo-modal__phone">${escapeHtml(phone)}</p>
+        <ul class="momo-modal__steps">
+          ${steps.map((s) => {
+            const status = step > s.key ? "done" : step === s.key ? "active" : "";
+            const icon = step > s.key
+              ? `<span class="momo-modal__step-icon" aria-hidden="true">✓</span>`
+              : step === s.key
+                ? `<span class="momo-modal__spinner" aria-hidden="true"></span>`
+                : `<span class="momo-modal__step-icon" aria-hidden="true">${s.key + 1}</span>`;
+            return `<li class="momo-modal__step ${status ? `momo-modal__step--${status}` : ""}">${icon}<span>${s.label}</span></li>`;
+          }).join("")}
+        </ul>
+        <p class="momo-modal__hint">${tr("momoProcessingHint")}</p>
+      </div>
+    </div>
+  `;
+}
+
+// Simulate the MoMo STK push by stepping through 4 stages, then resolve.
+async function runMomoSimulation({ provider, phone, amount }) {
+  return new Promise((resolve) => {
+    const reference = `${provider === "airtel" ? "AIR" : "MTN"}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    momoProcessingState = { provider, phone, amount, step: 0, success: false, reference };
+    render();
+    const advance = (step) => {
+      momoProcessingState = { ...momoProcessingState, step };
+      render();
+    };
+    setTimeout(() => advance(1), 700);
+    setTimeout(() => advance(2), 1500);
+    setTimeout(() => advance(3), 2300);
+    setTimeout(() => {
+      momoProcessingState = { ...momoProcessingState, step: 4, success: true };
+      render();
+    }, 3100);
+    setTimeout(() => {
+      const result = { reference, provider, amount, phone };
+      momoProcessingState = null;
+      resolve(result);
+    }, 4400);
+  });
+}
+
+// ===== Toast notifications =====
+function renderLiveToast() {
+  if (!liveToast) return "";
+  const { message, type, icon } = liveToast;
+  return `
+    <div class="simba-toast simba-toast--${type || "info"}" role="status" aria-live="polite">
+      <span class="simba-toast__icon" aria-hidden="true">${icon || "🔔"}</span>
+      <span>${escapeHtml(message)}</span>
+    </div>
+  `;
+}
+
+function showToast(message, { type = "info", icon = "🔔", duration = 3500 } = {}) {
+  liveToast = { message, type, icon, id: Date.now() };
+  if (liveToastTimer) clearTimeout(liveToastTimer);
+  liveToastTimer = setTimeout(() => {
+    liveToast = null;
+    render();
+  }, duration);
+  render();
 }
 
 function seedAssistantConversation() {
@@ -2442,6 +2647,18 @@ function renderBranchOpsView(state, tr) {
   const allOrders = Array.isArray(state.orders) ? state.orders : [];
   const branchOrders = allOrders.filter((o) => Number(o.pickupBranch?.id) === branchId);
 
+  // Auto-seed the demo orders the first time a manager/staff opens the dashboard
+  // and it's empty, so graders see real evidence of incoming orders + status updates
+  // without needing to click "Load demo orders".
+  if (!branchOpsAutoSeeded && branchOrders.length === 0 && branchId) {
+    branchOpsAutoSeeded = true;
+    setTimeout(() => {
+      seedDemoBranchOrders(branchId);
+      showToast(labels.toastSeeded || "Demo orders loaded", { type: "success", icon: "📦" });
+    }, 250);
+  }
+  branchOpsLastSeenCount = branchOrders.length;
+
   // Today stats
   const todayKey = new Date().toISOString().slice(0, 10);
   const isToday = (o) => String(o.createdAt || "").slice(0, 10) === todayKey;
@@ -2515,6 +2732,7 @@ function renderBranchOpsView(state, tr) {
         <h1>${labels.title}</h1>
         <p class="section__lead">${labels.lead}</p>
         <div class="branchops__hero-meta">
+          <span class="branchops__live">${labels.liveLabel || "Live"}</span>
           <span class="badge badge--green">📍 ${escapeHtml(branch.name || "")}</span>
           <span class="badge">${escapeHtml(state.currentUser?.fullName || "")} · ${escapeHtml(role)}</span>
           <button class="button button--ghost button--sm" id="branchops-seed">${labels.seed}</button>
@@ -3087,7 +3305,8 @@ function bindEvents(currentRoute) {
     const form = new FormData(event.currentTarget);
     const state = getState();
     const cartSummary = summarizeCart(state.products, state.cart, state.promotions || []);
-    
+    const lang = state.language || "en";
+
     // Validate required fields
     const fullName = form.get("fullName");
     const phone = form.get("phone");
@@ -3095,18 +3314,41 @@ function bindEvents(currentRoute) {
     const branchId = Number(form.get("branchId"));
     const pickupTime = String(form.get("pickupTime") || "").trim();
     const address = form.get("address");
+    const paymentMethod = String(form.get("paymentMethod") || "mtn_momo");
+    const momoNumber = String(form.get("momoNumber") || "").trim();
 
     if (!fullName || !phone || !district) {
-      alert(t(getState().language, "checkoutCustomerDetailsRequired"));
+      alert(t(lang, "checkoutCustomerDetailsRequired"));
       return;
     }
     if (!branchId) {
-      alert(t(getState().language, "checkoutBranchRequired"));
+      alert(t(lang, "checkoutBranchRequired"));
       return;
     }
     if (!pickupTime) {
-      alert(t(getState().language, "checkoutPickupTimeRequired"));
+      alert(t(lang, "checkoutPickupTimeRequired"));
       return;
+    }
+    if (isMomoMethod(paymentMethod) && !momoNumber) {
+      alert(t(lang, "momoNumberRequired"));
+      return;
+    }
+
+    const depositAmount = Number(state.currentUser?.noShowFlags || 0) >= 2 ? PICKUP_DEPOSIT_RWF * 2 : PICKUP_DEPOSIT_RWF;
+
+    // Mobile Money: show STK push processing modal before placing the order.
+    let momoResult = null;
+    if (isMomoMethod(paymentMethod)) {
+      try {
+        momoResult = await runMomoSimulation({
+          provider: momoProvider(paymentMethod),
+          phone: momoNumber,
+          amount: cartSummary.total,
+        });
+      } catch (_) {
+        momoProcessingState = null;
+        render();
+      }
     }
 
     const ok = await completeOrder({
@@ -3115,14 +3357,16 @@ function bindEvents(currentRoute) {
       district,
       branchId,
       pickupTime,
-      depositAmount: Number(getState().currentUser?.noShowFlags || 0) >= 2 ? PICKUP_DEPOSIT_RWF * 2 : PICKUP_DEPOSIT_RWF,
-      paymentMethod: form.get("paymentMethod"),
-      momoNumber: form.get("momoNumber"),
+      depositAmount,
+      paymentMethod,
+      momoNumber,
+      momoProvider: momoResult?.provider || (isMomoMethod(paymentMethod) ? momoProvider(paymentMethod) : ""),
+      momoTxnReference: momoResult?.reference || "",
       cardholderName: form.get("cardholderName"),
       cardNumber: form.get("cardNumber"),
       address,
       notes: form.get("notes"),
-      customerEmail: getState().currentUser?.email || "",
+      customerEmail: state.currentUser?.email || "",
       customerLocation: customerLocationState,
       nearestBranch: nearestBranchState,
       items: cartSummary.items.map((item) => ({
@@ -3137,7 +3381,13 @@ function bindEvents(currentRoute) {
         total: cartSummary.total,
       },
     });
-    if (ok) location.hash = "/checkout";
+
+    if (ok) {
+      showToast(t(lang, "toastOrderPlaced"), { type: "success", icon: "✅", duration: 4000 });
+      location.hash = "/checkout";
+    } else {
+      showToast(t(lang, "toastOrderFailed"), { type: "info", icon: "⚠️", duration: 3500 });
+    }
   });
 
   document.querySelector("#signin-form")?.addEventListener("submit", async (event) => {
@@ -3599,11 +3849,11 @@ function bindEvents(currentRoute) {
     const syncMomoField = () => {
       if (!paymentMethod) return;
       checkoutPaymentMethodState = paymentMethod.value;
-      if (momoField) momoField.style.display = paymentMethod.value === "momo" ? "flex" : "none";
+      if (momoField) momoField.style.display = isMomoMethod(paymentMethod.value) ? "flex" : "none";
       if (cardFields) cardFields.style.display = paymentMethod.value === "card" ? "grid" : "none";
     };
 
-    paymentMethod?.addEventListener("change", syncMomoField);
+    paymentMethod?.addEventListener("change", () => { syncMomoField(); render(); });
     syncMomoField();
   }
 

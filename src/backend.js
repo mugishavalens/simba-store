@@ -414,9 +414,15 @@ export async function createOrder(payload) {
   const customer = users.find((entry) => String(entry.email || "").toLowerCase() === customerEmail);
   const depositAmount = Number(payload.depositAmount || PICKUP_DEPOSIT_RWF);
   const requiredDeposit = Number(customer?.noShowFlags || 0) >= 2 ? depositAmount * 2 : depositAmount;
-  const normalizedMethod = ["momo", "card"].includes(String(payload.paymentMethod || "")) ? String(payload.paymentMethod) : "momo";
+  const VALID_METHODS = ["momo", "mtn_momo", "airtel_money", "card", "cash", "cash_pickup"];
+  const rawMethod = String(payload.paymentMethod || "");
+  const normalizedMethod = VALID_METHODS.includes(rawMethod) ? rawMethod : "mtn_momo";
+  const isMomoMethod = normalizedMethod === "momo" || normalizedMethod === "mtn_momo" || normalizedMethod === "airtel_money";
+  const momoProviderLabel =
+    normalizedMethod === "airtel_money" ? "Airtel Money" :
+    isMomoMethod ? "MTN Mobile Money" : "";
 
-  if (normalizedMethod === "momo" && !String(payload.momoNumber || "").trim()) {
+  if (isMomoMethod && !String(payload.momoNumber || "").trim()) {
     return { ok: false, code: "momoNumberRequired" };
   }
 
@@ -437,7 +443,7 @@ export async function createOrder(payload) {
     pickupBranch,
     pickupTime: String(payload.pickupTime).trim(),
     paymentMethod: normalizedMethod,
-    paymentStatus: normalizedMethod === "momo" ? "deposit_pending" : "deposit_authorized",
+    paymentStatus: isMomoMethod ? "deposit_confirmed" : (normalizedMethod === "card" ? "deposit_authorized" : "deposit_pending"),
     paymentTimeline: [
       {
         label: "created",
@@ -447,10 +453,11 @@ export async function createOrder(payload) {
       {
         label: "deposit",
         at: now,
-        note:
-          normalizedMethod === "momo"
-            ? `MoMo deposit request created for ${requiredDeposit} RWF.`
-            : `Card deposit authorization simulated for ${requiredDeposit} RWF.`,
+        note: isMomoMethod
+          ? `${momoProviderLabel} payment of ${requiredDeposit} RWF confirmed${payload.momoTxnReference ? ` (ref ${payload.momoTxnReference})` : ""}.`
+          : normalizedMethod === "card"
+          ? `Card deposit authorization simulated for ${requiredDeposit} RWF.`
+          : `Pay ${requiredDeposit} RWF in cash at branch pickup.`,
       },
     ],
     depositAmount: requiredDeposit,
@@ -474,12 +481,16 @@ export async function createOrder(payload) {
     },
     paymentMeta: {
       momoNumber: String(payload.momoNumber || "").trim(),
+      momoProvider: String(payload.momoProvider || (isMomoMethod ? momoProviderLabel : "")).trim(),
+      momoProviderLabel,
+      momoTxnReference: String(payload.momoTxnReference || "").trim(),
       cardholderName: String(payload.cardholderName || "").trim(),
       cardLast4: String(payload.cardNumber || "").replace(/\D/g, "").slice(-4),
-      instructions:
-        normalizedMethod === "momo"
-          ? `Your order requires a ${requiredDeposit} RWF MoMo deposit to confirm pickup.`
-          : `A ${requiredDeposit} RWF pickup deposit was authorized on card for demo purposes.`,
+      instructions: isMomoMethod
+        ? `${momoProviderLabel} payment of ${requiredDeposit} RWF confirmed for pickup at ${pickupBranch.name}.`
+        : normalizedMethod === "card"
+        ? `A ${requiredDeposit} RWF pickup deposit was authorized on card for demo purposes.`
+        : `Pay ${requiredDeposit} RWF in cash to the cashier when collecting your order at ${pickupBranch.name}.`,
     },
     items: (payload.items || []).map((item) => ({
       ...item,
@@ -550,7 +561,7 @@ export async function updateOrderStatus(payload) {
     order.status = "accepted";
     order.acceptedAt = now;
     order.acceptedBy = actorName;
-    order.paymentStatus = order.paymentMethod === "momo" ? "deposit_confirmed" : order.paymentStatus;
+    order.paymentStatus = ["momo", "mtn_momo", "airtel_money"].includes(order.paymentMethod) ? "deposit_confirmed" : order.paymentStatus;
     order.paymentTimeline = [
       ...(order.paymentTimeline || []),
       { label: "accepted", at: now, note: `${actorName} accepted the order for branch preparation.` },

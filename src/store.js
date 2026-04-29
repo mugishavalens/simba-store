@@ -752,7 +752,8 @@ export async function completeOrder(payload) {
   }
 
   const paymentMethod = String(payload.paymentMethod || "");
-  if (paymentMethod === "momo" && !String(payload.momoNumber || "").trim()) {
+  const isMomo = paymentMethod === "momo" || paymentMethod === "mtn_momo" || paymentMethod === "airtel_money";
+  if (isMomo && !String(payload.momoNumber || "").trim()) {
     state.checkoutFeedback = { type: "error", code: "momoNumberRequired" };
     emit();
     return false;

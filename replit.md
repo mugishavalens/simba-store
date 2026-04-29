@@ -2,6 +2,13 @@
 
 A modern static rebuild of the Simba Supermarket experience using a Rwandan product dataset. Pure HTML + vanilla JavaScript ES modules + CSS — no build step required.
 
+## Hackathon-grade features (Apr 2026)
+
+- **Trilingual UI (English / Français / Ikinyarwanda)**: The static `index.html` splash and the SPA's language switcher both expose all three languages. The dictionary in `src/i18n.js` is fully translated, including new MoMo flow, order timeline, SMS confirmation, and pickup status keys. Selecting a language via `?lang=xx` or the in-app switcher persists to `localStorage["simba.language.v2"]` (JSON-stringified).
+- **Mobile Money checkout**: The checkout payment selector exposes MTN MoMo, Airtel Money, card, and cash on pickup. Selecting a MoMo option triggers a 4-step STK-push simulation modal (request → prompt delivered → PIN → confirmed) before the order is recorded with a generated MoMo reference. Validation, status, and timeline are wired through `src/store.js` `completeOrder` and `src/backend.js` `createOrder`.
+- **Order confirmation**: After checkout, customers see a success banner with order timeline, SMS confirmation card, and "Track this order" link.
+- **Branch / Market Rep dashboard**: Auto-seeds demo orders the first time a manager opens an empty queue, shows a 🟢 Live indicator, and surfaces toast notifications for queue updates (`showToast`, `.simba-toast`).
+
 ## Project Structure
 
 - `index.html` — entry point

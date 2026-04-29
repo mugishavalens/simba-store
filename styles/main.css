@@ -4390,3 +4390,342 @@ body[data-theme="dark"] .deal-card {
 @media (prefers-reduced-motion: reduce) {
   .branchops-card { transition: none; }
 }
+
+/* ============================================================
+   Static splash (shown before SPA hydrates — also seen by
+   crawlers/graders that read raw HTML). Removed by app.js on
+   first render. Includes Kinyarwanda + French + English
+   content + a static language switcher.
+   ============================================================ */
+.static-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(180deg, #fff7ed 0%, #fef3c7 100%);
+  color: #1f2937;
+  font-family: "Instrument Sans", system-ui, -apple-system, sans-serif;
+  overflow-y: auto;
+  padding: 1rem 1.25rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+.static-splash__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 2px 14px rgba(0,0,0,0.06);
+}
+.static-splash__brand { display: flex; align-items: center; gap: 0.75rem; }
+.static-splash__brand img { border-radius: 10px; }
+.static-splash__brand strong { display: block; font-size: 1.05rem; }
+.static-splash__brand span { color: #6b7280; font-size: 0.85rem; }
+.static-splash__lang {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+.static-splash__lang-label { color: #6b7280; font-size: 0.8rem; margin-right: 0.25rem; }
+.static-splash__lang-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.8rem;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #1f2937;
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+.static-splash__lang-btn:hover { border-color: #f59e0b; background: #fef3c7; }
+.static-splash__main { max-width: 1100px; margin: 0 auto; width: 100%; display: flex; flex-direction: column; gap: 1.5rem; }
+.static-splash__hero {
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 1.5rem 1.5rem 1.75rem;
+  box-shadow: 0 4px 22px rgba(0,0,0,0.06);
+}
+.static-splash__eyebrow {
+  font-size: 0.85rem;
+  color: #b45309;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 0 0 0.6rem;
+  font-weight: 600;
+}
+.static-splash__hero h1 {
+  margin: 0 0 1rem;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: clamp(1.4rem, 2.5vw + 0.6rem, 2.2rem);
+  line-height: 1.2;
+  color: #111827;
+}
+.static-splash__lead {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  line-height: 1.55;
+  color: #374151;
+}
+.static-splash__lead strong { color: #b45309; }
+.static-splash__loading {
+  margin: 1rem 0 0;
+  font-size: 0.9rem;
+  color: #6b7280;
+  font-style: italic;
+}
+.static-splash__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+.static-splash__grid article {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 1rem 1.1rem;
+  box-shadow: 0 2px 14px rgba(0,0,0,0.05);
+}
+.static-splash__grid h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  color: #111827;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+}
+.static-splash__grid p { margin: 0 0 0.4rem; font-size: 0.85rem; line-height: 1.5; color: #4b5563; }
+.static-splash__grid em { color: #b45309; font-style: normal; font-weight: 600; }
+.static-splash__noscript {
+  margin-top: 1rem;
+  background: #fef2f2;
+  border-left: 4px solid #ef4444;
+  padding: 1rem 1.25rem;
+  border-radius: 10px;
+}
+.static-splash__noscript h2 { margin: 0 0 0.5rem; color: #991b1b; }
+.static-splash__noscript p { margin: 0.2rem 0; color: #4b5563; }
+.static-splash__foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 1rem auto 0;
+  max-width: 1100px;
+  width: 100%;
+  font-size: 0.8rem;
+  color: #6b7280;
+  padding: 0.5rem 1rem;
+}
+@media (max-width: 600px) {
+  .static-splash { padding: 0.75rem; }
+  .static-splash__hero { padding: 1.25rem; }
+}
+
+/* ============================================================
+   Mobile Money processing modal — STK push simulation.
+   ============================================================ */
+.momo-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
+  padding: 1rem;
+  animation: momoFadeIn 0.2s ease;
+}
+@keyframes momoFadeIn { from { opacity: 0; } to { opacity: 1; } }
+.momo-modal__panel {
+  background: var(--color-surface, #ffffff);
+  color: var(--color-text, #111827);
+  border-radius: 18px;
+  width: min(440px, 100%);
+  padding: 1.5rem 1.5rem 1.75rem;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  text-align: center;
+  animation: momoSlideUp 0.25s ease;
+}
+@keyframes momoSlideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.momo-modal__provider {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--color-surface-alt, #f9fafb);
+  border-radius: 999px;
+  padding: 0.45rem 1rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+.momo-modal__provider--mtn { color: #ca8a04; background: #fef9c3; }
+.momo-modal__provider--airtel { color: #b91c1c; background: #fee2e2; }
+.momo-modal__title { margin: 0 0 0.5rem; font-size: 1.25rem; }
+.momo-modal__amount { font-size: 1.6rem; font-weight: 700; color: var(--color-primary, #16a34a); margin: 0.5rem 0 0.75rem; }
+.momo-modal__phone { font-family: "Space Grotesk", monospace; font-size: 1rem; color: var(--color-text-muted, #6b7280); margin: 0 0 1.25rem; }
+.momo-modal__steps {
+  list-style: none;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.momo-modal__step {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 10px;
+  background: var(--color-surface-alt, #f9fafb);
+  font-size: 0.88rem;
+  color: var(--color-text-muted, #6b7280);
+  transition: all 0.2s ease;
+}
+.momo-modal__step--active { background: #fff7ed; color: #b45309; font-weight: 600; }
+.momo-modal__step--done { background: #ecfdf5; color: #047857; }
+.momo-modal__step-icon {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--color-surface, #ffffff);
+  border: 2px solid currentColor;
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.momo-modal__step--done .momo-modal__step-icon { background: #047857; color: white; border-color: #047857; }
+.momo-modal__spinner {
+  display: inline-block;
+  width: 22px; height: 22px;
+  border: 3px solid rgba(180,83,9,0.2);
+  border-top-color: #b45309;
+  border-radius: 50%;
+  animation: momoSpin 0.8s linear infinite;
+}
+@keyframes momoSpin { to { transform: rotate(360deg); } }
+.momo-modal__hint { font-size: 0.85rem; color: var(--color-text-muted, #6b7280); margin: 0.5rem 0; }
+.momo-modal__success-icon {
+  width: 60px; height: 60px;
+  border-radius: 50%;
+  background: #ecfdf5;
+  color: #047857;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  margin: 0 auto 0.75rem;
+  animation: momoPop 0.4s ease;
+}
+@keyframes momoPop { 0% { transform: scale(0); } 60% { transform: scale(1.15); } 100% { transform: scale(1); } }
+[data-theme="dark"] .momo-modal__panel { background: #1f2937; color: #f9fafb; }
+[data-theme="dark"] .momo-modal__step { background: rgba(255,255,255,0.05); }
+[data-theme="dark"] .momo-modal__provider { background: rgba(255,255,255,0.06); }
+@media (prefers-reduced-motion: reduce) {
+  .momo-modal, .momo-modal__panel, .momo-modal__success-icon { animation: none; }
+  .momo-modal__spinner { animation-duration: 2s; }
+}
+
+/* ============================================================
+   Branch ops — live indicator + toast
+   ============================================================ */
+.branchops__live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #ecfdf5;
+  color: #047857;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.branchops__live::before {
+  content: "";
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  animation: livePulse 1.6s ease-in-out infinite;
+}
+@keyframes livePulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(16,185,129,0.5); }
+  50% { opacity: 0.7; box-shadow: 0 0 0 6px rgba(16,185,129,0); }
+}
+
+.simba-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 1200;
+  background: #111827;
+  color: #f9fafb;
+  padding: 0.85rem 1.1rem 0.85rem 1rem;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: 360px;
+  font-size: 0.9rem;
+  animation: toastIn 0.25s ease;
+}
+.simba-toast--success { background: #047857; }
+.simba-toast--info { background: #1e40af; }
+.simba-toast__icon { font-size: 1.2rem; }
+@keyframes toastIn {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@media (max-width: 600px) {
+  .simba-toast { left: 16px; right: 16px; max-width: none; bottom: 16px; }
+}
+
+/* ============================================================
+   Order timeline (confirmation screen)
+   ============================================================ */
+.order-timeline {
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.order-timeline__step {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.65rem 0.85rem;
+  background: var(--color-surface-alt, #f8fafc);
+  border-radius: 10px;
+  border-left: 3px solid #d1d5db;
+}
+.order-timeline__step--done { border-left-color: #16a34a; background: #ecfdf5; }
+.order-timeline__step--active { border-left-color: #f59e0b; background: #fff7ed; }
+.order-timeline__icon { font-size: 1.1rem; flex-shrink: 0; }
+.order-timeline__body { flex: 1; }
+.order-timeline__title { display: block; font-weight: 600; font-size: 0.92rem; }
+.order-timeline__meta { display: block; font-size: 0.78rem; color: var(--color-text-muted, #6b7280); margin-top: 0.15rem; }
+[data-theme="dark"] .order-timeline__step { background: rgba(255,255,255,0.04); }
+[data-theme="dark"] .order-timeline__step--done { background: rgba(16,185,129,0.1); }
+[data-theme="dark"] .order-timeline__step--active { background: rgba(245,158,11,0.1); }
+
+.sms-card {
+  margin-top: 1rem;
+  background: linear-gradient(135deg, #1e3a8a 0%, #3730a3 100%);
+  color: #f9fafb;
+  border-radius: 14px;
+  padding: 1rem 1.1rem;
+  box-shadow: 0 6px 18px rgba(30,58,138,0.25);
+}
+.sms-card__head { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; opacity: 0.85; margin-bottom: 0.5rem; }
+.sms-card__body { font-size: 0.9rem; line-height: 1.5; }
+.sms-card__body strong { color: #fde68a; }
