@@ -1,6 +1,8 @@
 const dictionary = {
   en: {
     brandTag: "Rwanda's modern online supermarket",
+    brandSuperMarket: "Super Market",
+    brandOnlineShop: "Online Shop",
     navHome: "Home",
     navAbout: "About us",
     navVision: "Our vision",
@@ -461,6 +463,8 @@ const dictionary = {
   },
   fr: {
     brandTag: "Le supermarche en ligne moderne du Rwanda",
+    brandSuperMarket: "Supermarché",
+    brandOnlineShop: "Boutique en ligne",
     navHome: "Accueil",
     navAbout: "A propos",
     navVision: "Notre vision",
@@ -921,6 +925,8 @@ const dictionary = {
   },
   rw: {
     brandTag: "Isoko rya internet rya kijyambere mu Rwanda",
+    brandSuperMarket: "Isoko rinini",
+    brandOnlineShop: "Iduka rya online",
     navHome: "Ahabanza",
     navAbout: "Abo turi bo",
     navVision: "Icyerekezo cyacu",

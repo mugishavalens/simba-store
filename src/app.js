@@ -30,6 +30,7 @@ import {
   resetPassword,
   pushRecentlyViewed,
   clearRecentlyViewed,
+  dismissLanguageWelcome,
   toggleWishlist,
   removeFromWishlist,
   clearWishlist,
@@ -62,6 +63,18 @@ import { applyFilters, formatPrice, getActivePromotion, getCategories, getEffect
 import { translateCategory } from "./i18n.js";
 
 const BRAND_LOGO = "./assets/simba-logo.jpg";
+
+const LANGUAGE_META = {
+  en: { flag: "🇬🇧", name: "English",     native: "English",     tagline: "Shop in English" },
+  fr: { flag: "🇫🇷", name: "Français",    native: "Français",    tagline: "Acheter en français" },
+  rw: { flag: "🇷🇼", name: "Kinyarwanda", native: "Ikinyarwanda", tagline: "Gura mu Kinyarwanda" },
+};
+
+const LANGUAGE_WELCOME = {
+  en: { title: "Choose your language", lead: "Simba shopping is fully translated. Pick the language you prefer — you can change it any time from the top bar.", confirm: "Continue", dismiss: "Skip" },
+  fr: { title: "Choisissez votre langue", lead: "Simba est entièrement traduit. Choisissez votre langue préférée — vous pouvez la changer à tout moment depuis la barre du haut.", confirm: "Continuer", dismiss: "Ignorer" },
+  rw: { title: "Hitamo ururimi rwawe", lead: "Simba ihinduwe rwose. Hitamo ururimi ukunda — ushobora kuruhindura igihe icyo ari cyo cyose hejuru.", confirm: "Komeza", dismiss: "Reka" },
+};
 
 
 const VISION_SHOWCASE_IMAGES = [
@@ -115,6 +128,46 @@ function renderCategoryLabel(language, category) {
   return escapeHtml(translateCategory(language, category));
 }
 
+function renderLanguageWelcome(state) {
+  if (state.languageWelcomeSeen) return "";
+  if (!state.products || !state.products.length) return "";
+  const labels = LANGUAGE_WELCOME[state.language] || LANGUAGE_WELCOME.en;
+  return `
+    <div class="lang-welcome" id="lang-welcome" role="dialog" aria-modal="true" aria-labelledby="lang-welcome-title">
+      <div class="lang-welcome__backdrop" data-lang-welcome-dismiss></div>
+      <div class="lang-welcome__panel">
+        <div class="lang-welcome__hero">
+          <div class="lang-welcome__globe" aria-hidden="true">🌍</div>
+          <h2 id="lang-welcome-title" class="lang-welcome__title">${labels.title}</h2>
+          <p class="lang-welcome__lead">${labels.lead}</p>
+        </div>
+        <div class="lang-welcome__grid">
+          ${LANGUAGES.map((language) => {
+            const meta = LANGUAGE_META[language];
+            const isActive = state.language === language;
+            return `
+              <button
+                type="button"
+                class="lang-welcome__choice ${isActive ? "lang-welcome__choice--active" : ""}"
+                data-lang-welcome-pick="${language}"
+              >
+                <span class="lang-welcome__flag" aria-hidden="true">${meta.flag}</span>
+                <span class="lang-welcome__name">${meta.native}</span>
+                <span class="lang-welcome__tag">${meta.tagline}</span>
+                ${isActive ? `<span class="lang-welcome__check" aria-hidden="true">&#10003;</span>` : ""}
+              </button>
+            `;
+          }).join("")}
+        </div>
+        <div class="lang-welcome__actions">
+          <button type="button" class="button button--ghost" data-lang-welcome-dismiss>${labels.dismiss}</button>
+          <button type="button" class="button button--primary" id="lang-welcome-confirm">${labels.confirm}</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function render() {
   captureSearchInputState();
   branchMapInitialized = false;
@@ -155,6 +208,7 @@ function render() {
     ${renderAssistantWidget(state, tr, currentRoute)}
     ${state.cartOpen ? `<div class="cart-overlay" id="cart-overlay"></div>` : ""}
     ${state.cartOpen ? renderCart(state, cartSummary, tr) : ""}
+    ${renderLanguageWelcome(state)}
   `;
 
   bindEvents(currentRoute);
@@ -195,8 +249,8 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
           <div class="brand__mark"><img src="${BRAND_LOGO}" alt="Simba" /></div>
           <div class="brand__text">
             <strong>Simba</strong>
-            <span>Super Market</span>
-            <span>Online Shop</span>
+            <span>${tr("brandSuperMarket")}</span>
+            <span>${tr("brandOnlineShop")}</span>
           </div>
         </a>
         <button class="nav-hamburger" id="nav-hamburger" type="button" aria-label="Menu" aria-expanded="${navOpen}">
@@ -249,25 +303,33 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
             ` : ""}
             <div class="language-menu">
               <button
-                class="control-pill control-pill--tiny language-menu__trigger"
+                class="language-pill language-menu__trigger"
                 id="language-toggle"
                 type="button"
                 aria-haspopup="true"
                 aria-expanded="false"
                 aria-label="${tr("language")}"
               >
-                <span>${activeLanguage}</span>
-                <span class="language-menu__caret" aria-hidden="true">&#9662;</span>
+                <span class="language-pill__flag" aria-hidden="true">${LANGUAGE_META[state.language]?.flag || "🌍"}</span>
+                <span class="language-pill__name">${LANGUAGE_META[state.language]?.name || activeLanguage}</span>
+                <span class="language-pill__caret" aria-hidden="true">&#9662;</span>
               </button>
-              <div class="language-menu__list" id="language-list" hidden>
+              <div class="language-menu__list language-menu__list--rich" id="language-list" hidden role="menu" aria-label="${tr("language")}">
                 ${LANGUAGES.map(
                   (language) => `
                     <button
-                      class="language-menu__item ${state.language === language ? "language-menu__item--active" : ""}"
+                      class="language-menu__item language-menu__item--rich ${state.language === language ? "language-menu__item--active" : ""}"
                       type="button"
                       data-language="${language}"
+                      role="menuitemradio"
+                      aria-checked="${state.language === language}"
                     >
-                      ${language.toUpperCase()}
+                      <span class="language-menu__flag" aria-hidden="true">${LANGUAGE_META[language]?.flag || "🌍"}</span>
+                      <span class="language-menu__text">
+                        <span class="language-menu__name">${LANGUAGE_META[language]?.name || language}</span>
+                        <span class="language-menu__native">${LANGUAGE_META[language]?.native || ""}</span>
+                      </span>
+                      ${state.language === language ? `<span class="language-menu__check" aria-hidden="true">&#10003;</span>` : ""}
                     </button>
                   `,
                 ).join("")}
@@ -2427,10 +2489,10 @@ function renderFooter(tr) {
         <div>
           <p class="footer__social-label">${tr("footerSocialTitle")}</p>
           <div class="footer__social-links">
-            <a class="footer__social-link" href="https://www.facebook.com/" target="_blank" rel="noreferrer">Facebook</a>
-            <a class="footer__social-link" href="https://www.instagram.com/" target="_blank" rel="noreferrer">Instagram</a>
-            <a class="footer__social-link" href="https://x.com/" target="_blank" rel="noreferrer">X</a>
-            <a class="footer__social-link" href="https://wa.me/" target="_blank" rel="noreferrer">WhatsApp</a>
+            <a class="footer__social-link" href="https://www.facebook.com/" target="_blank" rel="noreferrer" aria-label="Facebook">Facebook</a>
+            <a class="footer__social-link" href="https://www.instagram.com/" target="_blank" rel="noreferrer" aria-label="Instagram">Instagram</a>
+            <a class="footer__social-link" href="https://x.com/" target="_blank" rel="noreferrer" aria-label="X">X</a>
+            <a class="footer__social-link" href="https://wa.me/" target="_blank" rel="noreferrer" aria-label="WhatsApp">WhatsApp</a>
           </div>
         </div>
         <p class="footer__meta">${tr("footerSocialText")}</p>
@@ -2562,6 +2624,19 @@ function bindEvents(currentRoute) {
       languageToggle?.setAttribute("aria-expanded", "false");
     }),
   );
+  // Language welcome modal
+  document.querySelectorAll("[data-lang-welcome-pick]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      setLanguage(btn.dataset.langWelcomePick);
+    }),
+  );
+  document.getElementById("lang-welcome-confirm")?.addEventListener("click", () => {
+    dismissLanguageWelcome();
+  });
+  document.querySelectorAll("[data-lang-welcome-dismiss]").forEach((el) =>
+    el.addEventListener("click", () => dismissLanguageWelcome()),
+  );
+
   document.querySelector("#cart-toggle")?.addEventListener("click", () => toggleCart(true));
   document.querySelector("#assistant-toggle")?.addEventListener("click", (e) => {
     e.stopPropagation();

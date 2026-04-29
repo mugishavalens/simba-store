@@ -42,6 +42,7 @@ const state = {
   promotions: readStorage(STORAGE_KEYS.promotions, defaultDemoPromotions()),
   recentlyViewed: readStorage(STORAGE_KEYS.recentlyViewed, []),
   wishlist: readStorage(STORAGE_KEYS.wishlist, []),
+  languageWelcomeSeen: readStorage(STORAGE_KEYS.languageWelcomeSeen, false),
   adminTab: readStorage(STORAGE_KEYS.adminTab, "overview"),
   customerNotificationFeed: readStorage(STORAGE_KEYS.customerNotificationFeed, []),
   assistantMessages: readStorage(STORAGE_KEYS.assistantMessages, [
@@ -239,6 +240,22 @@ export function initializeStore(payload) {
   syncProductSnapshot(state.products);
   state.store = payload.store;
   document.body.dataset.theme = state.theme;
+  // Auto-detect browser language on first visit (only if user hasn't picked one)
+  if (!readStorage(STORAGE_KEYS.language, null)) {
+    try {
+      const nav = (navigator.languages && navigator.languages[0]) || navigator.language || "en";
+      const code = String(nav).slice(0, 2).toLowerCase();
+      const detected = ["en", "fr", "rw"].includes(code) ? code : "en";
+      state.language = detected;
+      persist(STORAGE_KEYS.language, detected);
+    } catch {}
+  }
+  emit();
+}
+
+export function dismissLanguageWelcome() {
+  state.languageWelcomeSeen = true;
+  persist(STORAGE_KEYS.languageWelcomeSeen, true);
   emit();
 }
 

@@ -47,3 +47,13 @@ Customers can save products to a personal wishlist that lives in `localStorage` 
 - Customer account dashboard shows a **Saved items** tile (count + "Open wishlist" link).
 - Wishlist labels translated for English, French, and Kinyarwanda (inline `WISHLIST_LABELS`).
 - Store API: `toggleWishlist`, `removeFromWishlist`, `clearWishlist`, `isInWishlist` exported from `src/store.js`.
+
+## Phase 1 — Multi-language polish (complete)
+- `LANGUAGE_META` constant in `src/app.js` provides flag emoji, English name, native name, and tagline for `en` / `fr` / `rw`.
+- Topbar language switcher upgraded to a pill (`.language-pill`) showing flag + name + caret, opening a rich dropdown (`.language-menu__list--rich`) that shows flag, English name, native name, and a checkmark on the active language.
+- New `STORAGE_KEYS.languageWelcomeSeen` flag plus `dismissLanguageWelcome()` store action.
+- First-visit modal `renderLanguageWelcome()` shows a centered card with three large flag buttons (English / Français / Ikinyarwanda); Skip and Continue both dismiss and persist the flag.
+- Browser language auto-detect: `initializeStore` reads `navigator.languages[0]` / `navigator.language` and sets `state.language` to `en` / `fr` / `rw` only on the first visit (when no saved language).
+- New i18n keys `brandSuperMarket` / `brandOnlineShop` added for all three languages; brand lockup uses them via `tr(...)`.
+- Footer social links got `aria-label` attributes (brand names kept as text).
+- All new CSS appended to `styles/main.css` under section comment headers; respects `prefers-reduced-motion` and dark theme.
