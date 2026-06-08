@@ -2564,6 +2564,10 @@ body[data-theme="dark"] .map-overlay {
   gap: 0.5rem;
 }
 
+.assistant-shell--dragging {
+  user-select: none;
+}
+
 .assistant-panel {
   width: min(360px, calc(100vw - 3rem));
   max-height: 480px;
@@ -2584,6 +2588,8 @@ body[data-theme="dark"] .map-overlay {
   padding: 0.9rem 1rem 0.7rem;
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
+  cursor: move;
+  touch-action: none;
 }
 
 .assistant-panel__head strong {
@@ -2697,6 +2703,7 @@ body[data-theme="dark"] .map-overlay {
   cursor: pointer;
   box-shadow: 0 4px 16px rgba(19, 128, 109, 0.35);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
+  touch-action: none;
 }
 
 .assistant-signin-prompt {

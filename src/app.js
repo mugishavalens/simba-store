@@ -61,10 +61,11 @@ import {
   updateQuantity,
 } from "./store.js";
 import { DEFAULT_MIN_STOCK, EXPIRY_ALERT_DAYS, VAT_RATE } from "./constants.js";
-import { applyFilters, formatPrice, getActivePromotion, getCategories, getEffectivePrice, route, summarizeCart } from "./utils.js";
+import { applyFilters, formatPrice, getActivePromotion, getCategories, getEffectivePrice, route, searchProducts, summarizeCart } from "./utils.js";
 import { translateCategory } from "./i18n.js";
 
 const BRAND_LOGO = "./assets/simba-logo.jpg";
+const CHECKOUT_AFTER_AUTH_KEY = "simba.checkout-after-auth";
 
 const LANGUAGE_META = {
   en: { flag: "🇬🇧", name: "English",     short: "EN", native: "English",     tagline: "Shop in English" },
@@ -245,6 +246,7 @@ let navOpen = false;
 let assistantOpen = false;
 let assistantInputState = "";
 let assistantPending = false;
+<<<<<<< HEAD
 let checkoutPaymentMethodState = "mtn_momo";
 
 // Mobile money STK push simulation modal state.
@@ -259,6 +261,11 @@ let liveToastTimer = null;
 let branchOpsAutoSeeded = false;
 let branchOpsLastSeenCount = 0;
 let branchOpsLiveTimer = null;
+=======
+let assistantPosition = null;
+let assistantSuppressClick = false;
+let checkoutPaymentMethodState = "momo";
+>>>>>>> d8efb8e (improving ai search and assistant ai)
 
 window.addEventListener("hashchange", render);
 subscribe(() => render());
@@ -279,6 +286,51 @@ async function boot() {
 
 function renderCategoryLabel(language, category) {
   return escapeHtml(translateCategory(language, category));
+}
+
+function buildProductImageFallback(product) {
+  const category = String(product?.category || "Simba");
+  const name = String(product?.name || "Product");
+  const initial = (name.trim()[0] || "S").toUpperCase();
+  const palette = {
+    "Alcoholic Drinks": ["#f59e0b", "#7c2d12"],
+    "Baby Products": ["#60a5fa", "#1e3a8a"],
+    "Cleaning & Sanitary": ["#22c55e", "#14532d"],
+    "Cosmetics & Personal Care": ["#f472b6", "#831843"],
+    "Food Products": ["#fb923c", "#7c2d12"],
+    General: ["#34d399", "#064e3b"],
+    Juice: ["#facc15", "#854d0e"],
+    "Kitchen Storage": ["#94a3b8", "#334155"],
+    "Kitchenware & Electronics": ["#38bdf8", "#0c4a6e"],
+    Milk: ["#e0f2fe", "#075985"],
+    "Pet Care": ["#a78bfa", "#4c1d95"],
+    "Sports & Wellness": ["#2dd4bf", "#134e4a"],
+  };
+  const [accent, dark] = palette[category] || palette.General;
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640">
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#ffffff"/>
+          <stop offset="1" stop-color="${accent}"/>
+        </linearGradient>
+      </defs>
+      <rect width="640" height="640" fill="url(#bg)"/>
+      <circle cx="320" cy="270" r="128" fill="${dark}" opacity=".14"/>
+      <text x="320" y="322" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="156" font-weight="800" fill="${dark}">${escapeHtml(initial)}</text>
+      <text x="320" y="442" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="${dark}">${escapeHtml(category)}</text>
+      <text x="320" y="494" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700" fill="${dark}" opacity=".78">Simba Supermarket</text>
+    </svg>
+  `.trim();
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function renderProductImage(product, options = {}) {
+  const fallback = buildProductImageFallback(product);
+  const src = String(product?.image || "").trim() || fallback;
+  const loading = options.eager ? "eager" : "lazy";
+  const className = options.className ? ` class="${escapeHtml(options.className)}"` : "";
+  return `<img${className} src="${escapeHtml(src)}" data-fallback-src="${escapeHtml(fallback)}" alt="${escapeHtml(product?.name || "Product image")}" loading="${loading}" onerror="this.onerror=null;this.src=this.dataset.fallbackSrc" />`;
 }
 
 function renderLanguageWelcome(state) {
@@ -647,7 +699,7 @@ function renderDealCard(deal, labels, state, tr) {
       <span class="deal-card__badge">-${percent}${labels.off}</span>
       ${renderHeartButton(product.id, state, { variant: "solid" })}
       <div class="deal-card__media">
-        <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy" />
+        ${renderProductImage(product)}
         <div class="deal-card__shine" aria-hidden="true"></div>
       </div>
       <div class="deal-card__body">
@@ -749,7 +801,7 @@ function renderRecentlyViewedItem(product, labels, state) {
       <div class="recent-card__media">
         ${promo ? `<span class="recent-card__badge">-${Number(promo.percent)}%</span>` : ""}
         ${renderHeartButton(product.id, state, { size: "sm" })}
-        <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy" />
+        ${renderProductImage(product)}
       </div>
       <div class="recent-card__body">
         <span class="recent-card__category">${renderCategoryLabel(state.language, product.category)}</span>
@@ -801,7 +853,7 @@ function renderWishlistCard(product, labels, state, tr) {
           <span aria-hidden="true">×</span>
         </button>
         <a href="#/product/${product.id}" aria-label="${escapeHtml(product.name)}">
-          <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy" />
+          ${renderProductImage(product)}
         </a>
       </div>
       <div class="wishlist-card__body">
@@ -1148,7 +1200,7 @@ function renderProductCard(product, tr) {
       <div class="product-card__media">
         ${promo ? `<span class="promo-badge">-${Number(promo.percent)}${tr("promotionBadge")}</span>` : ""}
         ${renderHeartButton(product.id, state)}
-        <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy" />
+        ${renderProductImage(product)}
       </div>
       <div class="product-card__body">
         <div class="tag-row">
@@ -1184,7 +1236,7 @@ function renderProductView(state, productId, cartSummary, tr) {
       <section class="detail-card">
         <div class="detail-card__media">
           ${renderHeartButton(product.id, state, { variant: "solid" })}
-          <img src="${product.image}" alt="${escapeHtml(product.name)}" />
+          ${renderProductImage(product, { eager: true })}
         </div>
         <div class="detail-card__content">
           <div class="tag-row">
@@ -1222,6 +1274,26 @@ function renderProductView(state, productId, cartSummary, tr) {
 }
 
 function renderCheckoutView(state, cartSummary, tr) {
+  if (!state.isAuthenticated || state.currentUser?.role !== "customer") {
+    return `
+      <main class="checkout-layout">
+        <section class="checkout-card">
+          <h2>${tr("checkoutTitle")}</h2>
+          <div class="banner">
+            <h3>${tr("authSignInTitle")}</h3>
+            <p>${tr("accountSigninRequired")}</p>
+            <a class="button button--primary" href="#/auth/signin" data-checkout-signin>${tr("navSignIn")}</a>
+            <a class="button button--ghost" href="#/">${tr("continueShopping")}</a>
+          </div>
+        </section>
+        <aside class="summary-card">
+          <h3>${tr("orderSummary")}</h3>
+          <p>${tr("emptyCartText")}</p>
+        </aside>
+      </main>
+    `;
+  }
+
   const checkoutFeedback = state.checkoutFeedback
     ? `<p class="auth-feedback auth-feedback--${state.checkoutFeedback.type}">${tr(`checkout_${state.checkoutFeedback.code}`)}</p>`
     : "";
@@ -1382,14 +1454,17 @@ function renderAssistantWidget(state, tr, currentRoute) {
   const isLoggedIn = state.isAuthenticated && state.currentUser?.role === "customer";
   const messages = isLoggedIn && Array.isArray(state.assistantMessages) ? state.assistantMessages : [];
   const visibleMessages = messages.slice(-8);
+  const positionStyle = assistantPosition
+    ? `style="left:${assistantPosition.x}px;top:${assistantPosition.y}px;right:auto;bottom:auto"`
+    : "";
 
   return `
-    <div class="assistant-shell ${assistantOpen ? "assistant-shell--open" : ""}">
+    <div class="assistant-shell ${assistantOpen ? "assistant-shell--open" : ""}" ${positionStyle}>
       ${
         assistantOpen
           ? `
             <section class="assistant-panel" aria-label="${tr("assistantTitle")}">
-              <div class="assistant-panel__head">
+              <div class="assistant-panel__head" data-assistant-drag-handle>
                 <div>
                   <strong>${tr("assistantTitle")}</strong>
                   <p>${tr("assistantLead")}</p>
@@ -1434,7 +1509,7 @@ function renderAssistantWidget(state, tr, currentRoute) {
           `
           : ""
       }
-      <button class="assistant-launcher" id="assistant-toggle" type="button">
+      <button class="assistant-launcher" id="assistant-toggle" type="button" data-assistant-drag-handle>
         <span>${tr("assistantTitle")}</span>
       </button>
     </div>
@@ -1726,7 +1801,167 @@ function inferAssistantCategories(query, categories) {
   return inferred;
 }
 
+const ASSISTANT_SMALL_RESULT_LIMIT = 12;
+const ASSISTANT_LARGE_RESULT_LIMIT = 8;
+
+function getAssistantProductMatches(products, rawQuery) {
+  const matches = searchProducts(products, rawQuery, { stock: "in" })
+    .filter((entry) => entry.score > 0)
+    .map((entry) => entry.product);
+  const limit = matches.length <= ASSISTANT_SMALL_RESULT_LIMIT
+    ? ASSISTANT_SMALL_RESULT_LIMIT
+    : ASSISTANT_LARGE_RESULT_LIMIT;
+
+  return {
+    visible: matches.slice(0, limit),
+    hiddenCount: Math.max(0, matches.length - limit),
+  };
+}
+
+function formatAssistantProductList(products) {
+  return products.map((product) => `${product.name} (${formatPrice(product.price)})`).join(", ");
+}
+
+function buildDeterministicAssistantProductText(matches, tr) {
+  const suffix = matches.hiddenCount
+    ? ` There are ${matches.hiddenCount} more matching products in the catalog.`
+    : "";
+  return `${tr("assistantDirectReply")} ${formatAssistantProductList(matches.visible)}.${suffix}`;
+}
+
+function buildLocalAssistantHelpReply(rawQuery) {
+  const query = normalizeAssistantToken(rawQuery);
+  if (/\b(sign|signin|login|account|register|create account)\b/.test(query)) {
+    return "Sign in or create a customer account first, then you can use the cart, checkout, wishlist, and shop assistant.";
+  }
+  if (/\b(cart|basket|add|remove|quantity)\b/.test(query)) {
+    return "Open a product, add it to your cart, then use the cart panel to change quantities or remove items before checkout.";
+  }
+  if (/\b(checkout|order|buy|purchase|place order)\b/.test(query)) {
+    return "Add products to your cart, go to checkout, enter your delivery details, choose a payment method, and place the order.";
+  }
+  if (/\b(momo|mobile money|payment|pay|card|cash|deposit)\b/.test(query)) {
+    return "At checkout you can use the MoMo deposit flow, demo card authorization, or cash on delivery depending on what is available.";
+  }
+  if (/\b(branch|pickup|pick up|location)\b/.test(query)) {
+    return `For branch pickup, choose a pickup branch during checkout. Available branches include ${SIMBA_BRANCHES.map((branch) => branch.name).join(", ")}.`;
+  }
+  if (/\b(support|help|contact|phone|email)\b/.test(query)) {
+    return "For support, contact hello@simba.rw or +250 788 123 456.";
+  }
+  return "";
+}
+
+function buildAssistantStoreInfoReply(state, rawQuery) {
+  const query = normalizeAssistantToken(rawQuery);
+  const products = Array.isArray(state.products) ? state.products : [];
+  const categories = getCategories(products);
+  const asksForProductCount =
+    /\b(how many|number of|total|count)\b.*\b(product|products|item|items|catalog|store)\b/.test(query) ||
+    /\b(product|products|item|items|catalog)\b.*\b(count|total)\b/.test(query);
+  const asksForCategories =
+    /\b(what|which|list|show|see|have|available|all|how many)\b.*\b(category|categories)\b/.test(query) ||
+    /\b(category|categories)\b.*\b(available|have|list|show|store|catalog|all|count|total)\b/.test(query);
+
+  if (asksForCategories) {
+    return {
+      text: `This store has ${categories.length} categories: ${categories.join(", ")}.`,
+      products: [],
+    };
+  }
+
+  if (asksForProductCount) {
+    const inStockCount = products.filter((product) => product.inStock).length;
+    return {
+      text: `This store currently has ${products.length} products in the catalog. ${inStockCount} are marked in stock across ${categories.length} categories.`,
+      products: [],
+    };
+  }
+
+  return null;
+}
+
 async function buildAssistantReply(state, rawQuery, tr) {
+  const language = state.language || "en";
+  const langName = language === "rw" ? "Kinyarwanda" : language === "fr" ? "French" : "English";
+  const storeInfoReply = buildAssistantStoreInfoReply(state, rawQuery);
+  if (storeInfoReply) return storeInfoReply;
+
+  const groqKey = localStorage.getItem("simba.groq-api-key") || "";
+  const matches = getAssistantProductMatches(state.products, rawQuery);
+  const catalogLines = matches.visible.map((product) =>
+    `- ${product.name} | ${product.category} | ${product.price} RWF | ${product.inStock ? "in stock" : "out of stock"}`
+  );
+
+  if (!groqKey) {
+    return buildSmartLocalAssistantReply(state, rawQuery, tr, matches);
+  }
+
+  const systemPrompt = `You are a helpful assistant for Simba Supermarket in Kigali, Rwanda.
+Respond ONLY in ${langName}.
+
+You can help with two things:
+1. Product search: only recommend products from the FILTERED CATALOG below. The catalog was already filtered by the app for the user's product, price, budget, and stock conditions. Never invent products or add products not shown.
+2. Simba help: explain sign in, cart, checkout, MoMo deposit, branch pickup, support, and account flows.
+
+Keep replies short. For products, list every product from FILTERED CATALOG when there are ${ASSISTANT_SMALL_RESULT_LIMIT} or fewer. ${matches.hiddenCount ? `If there are more, list the shown products and say ${matches.hiddenCount} more match.` : "Do not say there are more products when FILTERED CATALOG is complete."} Include prices when the user mentions budget or price.
+
+Simba info:
+- Sign in or create an account to shop.
+- Add products to cart, then go to checkout.
+- Payment: small MoMo deposit for branch pickup, with demo card fallback.
+- Branches: ${SIMBA_BRANCHES.map((branch) => branch.name).join(", ")}
+- Support: hello@simba.rw | +250 788 123 456
+
+${catalogLines.length ? `FILTERED CATALOG:\n${catalogLines.join("\n")}` : "FILTERED CATALOG: No matching products."}`;
+
+  try {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${groqKey}`,
+      },
+      body: JSON.stringify({
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: rawQuery },
+        ],
+        max_tokens: 320,
+        temperature: 0.15,
+      }),
+    });
+
+    if (!res.ok) throw new Error(`${res.status}`);
+    const data = await res.json();
+    const text = data.choices?.[0]?.message?.content?.trim();
+    if (!text) throw new Error("empty");
+
+    return { text, products: matches.visible };
+  } catch (err) {
+    console.error("Groq assistant error:", err.message);
+    return buildSmartLocalAssistantReply(state, rawQuery, tr, matches);
+  }
+}
+
+function buildSmartLocalAssistantReply(state, rawQuery, tr, precomputedMatches = null) {
+  const categories = getCategories(state.products);
+  const matches = precomputedMatches || getAssistantProductMatches(state.products, rawQuery);
+
+  if (!matches.visible.length) {
+    const helpReply = buildLocalAssistantHelpReply(rawQuery);
+    if (helpReply) return { text: helpReply, products: [] };
+    return { text: `${tr("assistantNoMatch")} ${categories.slice(0, 4).join(", ")}.`, products: [] };
+  }
+
+  return {
+    text: buildDeterministicAssistantProductText(matches, tr),
+    products: matches.visible,
+  };
+}
+
+async function buildAssistantReplyLegacy(state, rawQuery, tr) {
   const language = state.language || "en";
   const langName = language === "rw" ? "Kinyarwanda" : language === "fr" ? "French" : "English";
 
@@ -2964,6 +3199,9 @@ function renderAuthView(state, mode, tr) {
 }
 
 function renderCart(state, cartSummary, tr) {
+  const checkoutAction = state.isAuthenticated && state.currentUser?.role === "customer"
+    ? `<a class="button button--primary" href="#/checkout">${tr("goCheckout")}</a>`
+    : `<a class="button button--primary" href="#/auth/signin" data-checkout-signin>${tr("navSignIn")}</a>`;
   return `
     <aside class="cart-drawer">
       <div class="summary-card">
@@ -2982,7 +3220,7 @@ function renderCart(state, cartSummary, tr) {
         <div class="summary-card__row"><span>${tr("pickupDeposit")}</span><strong>${formatPrice(cartSummary.deposit)}</strong></div>
         <div class="summary-card__row summary-card__total"><span>${tr("total")}</span><strong>${formatPrice(cartSummary.total)}</strong></div>
         <div class="cart-actions">
-          <a class="button button--primary" href="#/checkout">${tr("goCheckout")}</a>
+          ${checkoutAction}
           <button class="button button--ghost" id="clear-cart">${tr("clearCart")}</button>
         </div>
       </div>
@@ -2994,7 +3232,7 @@ function renderCartItem(item, tr) {
   return `
     <div class="cart-item">
       <div class="cart-item__main">
-        <div class="cart-item__thumb"><img src="${item.product.image}" alt="${escapeHtml(item.product.name)}" /></div>
+        <div class="cart-item__thumb">${renderProductImage(item.product, { eager: true })}</div>
         <div class="cart-item__info">
           <div class="cart-item__name">${escapeHtml(item.product.name)}</div>
           <div class="muted">${tr("unit")}: ${escapeHtml(item.product.unit)}</div>
@@ -3053,6 +3291,68 @@ function renderFooter(tr) {
       <p class="footer__copyright">${tr("footerCopyright")}</p>
     </footer>
   `;
+}
+
+function clampAssistantPosition(x, y, shell) {
+  const margin = 12;
+  const width = shell?.offsetWidth || 180;
+  const height = shell?.offsetHeight || 56;
+  const maxX = Math.max(margin, window.innerWidth - width - margin);
+  const maxY = Math.max(margin, window.innerHeight - height - margin);
+  return {
+    x: Math.min(Math.max(margin, x), maxX),
+    y: Math.min(Math.max(margin, y), maxY),
+  };
+}
+
+function bindAssistantDrag() {
+  const shell = document.querySelector(".assistant-shell");
+  if (!shell) return;
+
+  shell.querySelectorAll("[data-assistant-drag-handle]").forEach((handle) => {
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      if (event.target.closest("a, input, textarea, select, [data-assistant-product-id]")) return;
+      if (handle.classList.contains("assistant-panel__head") && event.target.closest("button")) return;
+
+      event.stopPropagation();
+      const rect = shell.getBoundingClientRect();
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const offsetX = startX - rect.left;
+      const offsetY = startY - rect.top;
+      let moved = false;
+
+      shell.classList.add("assistant-shell--dragging");
+
+      const onPointerMove = (moveEvent) => {
+        const deltaX = Math.abs(moveEvent.clientX - startX);
+        const deltaY = Math.abs(moveEvent.clientY - startY);
+        if (deltaX > 4 || deltaY > 4) moved = true;
+        if (!moved) return;
+
+        assistantPosition = clampAssistantPosition(
+          moveEvent.clientX - offsetX,
+          moveEvent.clientY - offsetY,
+          shell,
+        );
+        shell.style.left = `${assistantPosition.x}px`;
+        shell.style.top = `${assistantPosition.y}px`;
+        shell.style.right = "auto";
+        shell.style.bottom = "auto";
+      };
+
+      const onPointerUp = () => {
+        window.removeEventListener("pointermove", onPointerMove);
+        window.removeEventListener("pointerup", onPointerUp);
+        shell.classList.remove("assistant-shell--dragging");
+        if (moved && handle.id === "assistant-toggle") assistantSuppressClick = true;
+      };
+
+      window.addEventListener("pointermove", onPointerMove);
+      window.addEventListener("pointerup", onPointerUp, { once: true });
+    });
+  });
 }
 
 function bindEvents(currentRoute) {
@@ -3259,8 +3559,18 @@ function bindEvents(currentRoute) {
   }
 
   document.querySelector("#cart-toggle")?.addEventListener("click", () => toggleCart(true));
+  document.querySelectorAll("[data-checkout-signin]").forEach((link) =>
+    link.addEventListener("click", () => {
+      sessionStorage.setItem(CHECKOUT_AFTER_AUTH_KEY, "1");
+      toggleCart(false);
+    }),
+  );
   document.querySelector("#assistant-toggle")?.addEventListener("click", (e) => {
     e.stopPropagation();
+    if (assistantSuppressClick) {
+      assistantSuppressClick = false;
+      return;
+    }
     assistantOpen = !assistantOpen;
     render();
   });
@@ -3277,6 +3587,7 @@ function bindEvents(currentRoute) {
   document.querySelector("#assistant-input")?.addEventListener("input", (event) => {
     assistantInputState = event.target.value;
   });
+  bindAssistantDrag();
   document.querySelector("#nav-hamburger")?.addEventListener("click", () => {
     navOpen = !navOpen;
     render();
@@ -3412,7 +3723,8 @@ function bindEvents(currentRoute) {
   );
 
   document.querySelector("#buy-now")?.addEventListener("click", (event) => {
-    if (!getState().isAuthenticated) {
+    const state = getState();
+    if (!state.isAuthenticated || state.currentUser?.role !== "customer") {
       location.hash = "/auth/signin";
       return;
     }
@@ -3424,6 +3736,10 @@ function bindEvents(currentRoute) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const state = getState();
+    if (!state.isAuthenticated || state.currentUser?.role !== "customer") {
+      location.hash = "/auth/signin";
+      return;
+    }
     const cartSummary = summarizeCart(state.products, state.cart, state.promotions || []);
     const lang = state.language || "en";
 
@@ -3522,7 +3838,13 @@ function bindEvents(currentRoute) {
     if (ok) {
       const role = getState().currentUser?.role;
       if (role === "customer") seedAssistantConversation();
-      location.hash = ["admin", "manager", "staff"].includes(role) ? "/admin" : "/";
+      const shouldReturnToCheckout = sessionStorage.getItem(CHECKOUT_AFTER_AUTH_KEY) === "1";
+      sessionStorage.removeItem(CHECKOUT_AFTER_AUTH_KEY);
+      location.hash = ["admin", "manager", "staff"].includes(role)
+        ? "/admin"
+        : shouldReturnToCheckout
+          ? "/checkout"
+          : "/";
     }
   });
 
@@ -3555,7 +3877,9 @@ function bindEvents(currentRoute) {
     });
     if (ok) {
       seedAssistantConversation();
-      location.hash = "/";
+      const shouldReturnToCheckout = sessionStorage.getItem(CHECKOUT_AFTER_AUTH_KEY) === "1";
+      sessionStorage.removeItem(CHECKOUT_AFTER_AUTH_KEY);
+      location.hash = shouldReturnToCheckout ? "/checkout" : "/";
     }
   });
 
