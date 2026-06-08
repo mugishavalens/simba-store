@@ -246,7 +246,6 @@ let navOpen = false;
 let assistantOpen = false;
 let assistantInputState = "";
 let assistantPending = false;
-<<<<<<< HEAD
 let checkoutPaymentMethodState = "mtn_momo";
 
 // Mobile money STK push simulation modal state.
@@ -261,11 +260,8 @@ let liveToastTimer = null;
 let branchOpsAutoSeeded = false;
 let branchOpsLastSeenCount = 0;
 let branchOpsLiveTimer = null;
-=======
 let assistantPosition = null;
 let assistantSuppressClick = false;
-let checkoutPaymentMethodState = "momo";
->>>>>>> d8efb8e (improving ai search and assistant ai)
 
 window.addEventListener("hashchange", render);
 subscribe(() => render());
