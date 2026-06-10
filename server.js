@@ -45,8 +45,92 @@ async function serveFile(filePath, res) {
   res.end(data);
 }
 
+async function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => resolve(body));
+    req.on("error", reject);
+  });
+}
+
+async function handleAiSearch(req, res) {
+  try {
+    const raw = await readBody(req);
+    const { query } = JSON.parse(raw);
+    if (!query || typeof query !== "string") {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "query required" }));
+      return;
+    }
+
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "AI search not configured" }));
+      return;
+    }
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        max_tokens: 60,
+        temperature: 0,
+        messages: [
+          {
+            role: "system",
+            content: `You are a search assistant for Simba Supermarket in Rwanda.
+The user types a natural language query. Your job is to extract the core product search term(s) to use against the product catalog.
+Rules:
+- Return ONLY a short search phrase (1-4 words) — no explanation, no punctuation, no quotes.
+- Strip filler words like "i want", "show me", "find", "i need", "give me", "looking for", "things for".
+- Map intents to product keywords: breakfast → bread milk tea cereal, drinks → juice water soda, cleaning → detergent soap bleach, baby → lactogen wipes diapers.
+- If the query already contains a product name, return it directly.
+- If no clear product intent, return the most relevant noun(s).
+Examples:
+  "i want things for breakfast" → "bread milk cereal"
+  "i want to alcohol" → "beer wine spirits"
+  "something to clean the floor" → "floor cleaner mop"
+  "snacks for kids" → "biscuits crisps snacks"
+  "milk under 1000" → "milk"`,
+          },
+          { role: "user", content: query },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      console.error("OpenAI error:", err);
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "AI upstream error" }));
+      return;
+    }
+
+    const data = await response.json();
+    const searchTerm = data.choices?.[0]?.message?.content?.trim() || query;
+
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    res.end(JSON.stringify({ searchTerm }));
+  } catch (err) {
+    console.error("AI search error:", err);
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Internal error" }));
+  }
+}
+
 const server = createServer(async (req, res) => {
   try {
+    if (req.method === "POST" && req.url === "/api/ai-search") {
+      await handleAiSearch(req, res);
+      return;
+    }
+
     let urlPath = req.url || "/";
     if (urlPath === "/") urlPath = "/index.html";
 
@@ -65,7 +149,6 @@ const server = createServer(async (req, res) => {
       }
       await serveFile(filePath, res);
     } catch {
-      // SPA fallback to index.html for unknown routes (no extension)
       if (!extname(urlPath)) {
         await serveFile(join(ROOT, "index.html"), res);
         return;

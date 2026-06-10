@@ -3437,17 +3437,77 @@ function bindEvents(currentRoute) {
     })
   );
 
-  document.querySelector("#search-input")?.addEventListener("input", (event) => setSearch(event.target.value));
-  document.querySelector("#search-input")?.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    const nextValue = event.currentTarget.value;
-    pendingCatalogScroll = true;
-    setSearch(nextValue);
-    if (location.hash !== "#catalog") {
-      location.hash = "catalog";
+  (function wireAiSearch() {
+    const input = document.querySelector("#search-input");
+    if (!input) return;
+
+    let aiDebounceTimer = null;
+    let lastAiQuery = "";
+    let aiController = null;
+
+    async function runAiSearch(rawValue) {
+      const trimmed = rawValue.trim();
+      if (trimmed.length < 3) {
+        setSearch(rawValue);
+        return;
+      }
+      if (trimmed === lastAiQuery) return;
+      lastAiQuery = trimmed;
+
+      if (aiController) aiController.abort();
+      aiController = new AbortController();
+
+      const searchEl = document.querySelector("#search-input");
+      if (searchEl) searchEl.classList.add("search--ai-loading");
+
+      try {
+        const res = await fetch("/api/ai-search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: trimmed }),
+          signal: aiController.signal,
+        });
+        if (!res.ok) throw new Error("ai-search failed");
+        const { searchTerm } = await res.json();
+        setSearch(searchTerm || rawValue);
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          setSearch(rawValue);
+        }
+      } finally {
+        const el = document.querySelector("#search-input");
+        if (el) el.classList.remove("search--ai-loading");
+      }
     }
-  });
+
+    input.addEventListener("input", (event) => {
+      const value = event.target.value;
+      setSearch(value);
+      clearTimeout(aiDebounceTimer);
+      if (value.trim().length >= 3) {
+        aiDebounceTimer = setTimeout(() => runAiSearch(value), 500);
+      } else {
+        lastAiQuery = "";
+        if (aiController) { aiController.abort(); aiController = null; }
+      }
+    });
+
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      const value = event.currentTarget.value;
+      clearTimeout(aiDebounceTimer);
+      pendingCatalogScroll = true;
+      if (value.trim().length >= 3) {
+        runAiSearch(value);
+      } else {
+        setSearch(value);
+      }
+      if (location.hash !== "#catalog") {
+        location.hash = "catalog";
+      }
+    });
+  })();
   document.querySelector("#category-filter")?.addEventListener("change", (event) => setFilter("category", event.target.value));
   document.querySelector("#price-filter")?.addEventListener("change", (event) => setFilter("price", event.target.value));
   document.querySelector("#stock-filter")?.addEventListener("change", (event) => setFilter("stock", event.target.value));
