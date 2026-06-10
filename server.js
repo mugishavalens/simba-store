@@ -71,14 +71,20 @@ async function handleAiSearch(req, res) {
       return;
     }
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const isGroq = apiKey.startsWith("gsk_");
+    const baseUrl = isGroq
+      ? "https://api.groq.com/openai/v1/chat/completions"
+      : "https://api.openai.com/v1/chat/completions";
+    const model = isGroq ? "llama-3.1-8b-instant" : "gpt-4o-mini";
+
+    const response = await fetch(baseUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model,
         max_tokens: 60,
         temperature: 0,
         messages: [
