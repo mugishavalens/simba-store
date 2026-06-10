@@ -91,33 +91,47 @@ async function handleAiSearch(req, res) {
           {
             role: "system",
             content: `You are a search assistant for Simba Supermarket in Rwanda.
-The user types a natural language query. Extract the core product search term(s) AND preserve any price constraint.
+Given a user query, return a JSON object with two fields:
+  "searchTerm": core product keywords (1-5 words), preserving any price constraint
+  "category": the single best matching category from the list below, or "all" if none fits
 
-Rules:
-- Return ONLY a short phrase — no explanation, no punctuation, no quotes.
-- Strip filler words like "i want", "show me", "find", "i need", "give me", "looking for", "things for".
-- IMPORTANT: If the query contains a price limit (under X, below X, less than X, under X rwf), append it exactly to the output, e.g. "beer under 5000" or "milk under 1000 rwf".
-- Map intents to product keywords using these real Rwandan supermarket brands:
-    alcohol / beer → miitzig amstel heineken corona
-    wine / champagne → wine sparkling eva chamdor
-    whisky / spirits → whisky bond cognac vodka
+CATEGORIES (use exact spelling):
+  "Alcoholic Drinks"         — beer, wine, spirits, whisky, vodka, gin, rum, cognac, champagne
+  "Cosmetics & Personal Care"— soap, shampoo, lotion, cream, perfume, deodorant, makeup, skincare, hair, beauty, toothpaste
+  "General"                  — rice, couscous, flour, sugar, grains, pasta, cereal, oil, cooking oil, staples, bread
+  "Food Products"            — meat, sausage, beef, chicken, corned beef, ketchup, mayo, sauce, condiments, canned food, snacks
+  "Kitchenware & Electronics"— pots, pans, iron, kettle, appliances, cookware, kitchen equipment, cups, coffee pot
+  "Cleaning & Sanitary"      — detergent, bleach, toilet paper, cleaning, disinfectant, mop, sanitizer, laundry
+  "Baby Products"            — baby, diapers, wipes, lactogen, infant, formula, baby food
+  "Pet Care"                 — pet, dog, cat, animal food, bird
+  "Kitchen Storage"          — containers, storage jars, organizers, canisters
+  "Sports & Wellness"        — sports, fitness, wellness, gym
+  "all"                      — when query spans multiple categories or is unclear
+
+RULES:
+- Return ONLY valid JSON, nothing else. No explanation, no markdown.
+- searchTerm: strip filler words ("i want", "show me", "find", "looking for", "things for", "give me").
+- searchTerm: if query has a price constraint (under X, over X, below X, less than X, more than X), keep it e.g. "beer under 5000" or "whisky over 10000".
+- searchTerm: use real product names from this catalog where possible:
+    beer → miitzig amstel heineken corona guinness leffe
+    whisky → whisky bond scotch
+    wine → wine sparkling chamdor
     breakfast → bread milk tea cereal
-    drinks / beverages → juice water soda
-    cleaning → detergent soap bleach
+    cleaning → detergent bleach soap
     baby → lactogen wipes diapers
-- If the query already contains a product name, return it directly (with price if present).
-- If no clear product intent, return the most relevant noun(s).
 
-Examples:
-  "i want things for breakfast" → "bread milk cereal"
-  "i want alcohol" → "miitzig amstel heineken beer"
-  "i want alcohol under 5000" → "miitzig amstel heineken beer under 5000"
-  "i want to alcohol" → "miitzig amstel heineken beer"
-  "cheap beer" → "miitzig amstel beer"
-  "something to clean the floor" → "floor cleaner mop"
-  "snacks for kids" → "biscuits crisps snacks"
-  "milk under 1000" → "milk under 1000"
-  "whisky under 15000" → "whisky under 15000"`,
+EXAMPLES:
+  "i want alcohol under 5000"     → {"searchTerm":"miitzig amstel heineken beer under 5000","category":"Alcoholic Drinks"}
+  "i want alcohol over 5000"      → {"searchTerm":"miitzig amstel heineken beer over 5000","category":"Alcoholic Drinks"}
+  "i want things for breakfast"   → {"searchTerm":"bread milk cereal","category":"General"}
+  "something to clean the floor"  → {"searchTerm":"floor cleaner detergent","category":"Cleaning & Sanitary"}
+  "shampoo and conditioner"       → {"searchTerm":"shampoo conditioner","category":"Cosmetics & Personal Care"}
+  "baby diapers"                  → {"searchTerm":"diapers wipes","category":"Baby Products"}
+  "cooking pots"                  → {"searchTerm":"pots cookware","category":"Kitchenware & Electronics"}
+  "rice under 10000"              → {"searchTerm":"rice under 10000","category":"General"}
+  "snacks for kids"               → {"searchTerm":"biscuits crisps snacks","category":"Food Products"}
+  "milk"                          → {"searchTerm":"milk","category":"all"}
+  "pet food"                      → {"searchTerm":"pet food","category":"Pet Care"}`,
           },
           { role: "user", content: query },
         ],
@@ -133,10 +147,19 @@ Examples:
     }
 
     const data = await response.json();
-    const searchTerm = data.choices?.[0]?.message?.content?.trim() || query;
+    const aiText = data.choices?.[0]?.message?.content?.trim() || "{}";
+    let searchTerm = query;
+    let category = "all";
+    try {
+      const parsed = JSON.parse(aiText);
+      searchTerm = parsed.searchTerm || query;
+      category = parsed.category || "all";
+    } catch {
+      searchTerm = aiText || query;
+    }
 
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-    res.end(JSON.stringify({ searchTerm }));
+    res.end(JSON.stringify({ searchTerm, category }));
   } catch (err) {
     console.error("AI search error:", err);
     res.writeHead(500, { "Content-Type": "application/json" });

@@ -3466,8 +3466,14 @@ function bindEvents(currentRoute) {
           signal: aiController.signal,
         });
         if (!res.ok) throw new Error("ai-search failed");
-        const { searchTerm } = await res.json();
+        const data = await res.json();
+        const { searchTerm, category } = data;
         setSearch(searchTerm || trimmed);
+        if (category && category !== "all") {
+          setFilter("category", category);
+          const catEl = document.querySelector("#category-filter");
+          if (catEl) catEl.value = category;
+        }
       } catch (err) {
         if (err.name !== "AbortError") {
           setSearch(trimmed);

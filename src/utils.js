@@ -102,22 +102,68 @@ const SEARCH_STOP_WORDS = new Set([
 ]);
 
 const SEARCH_ALIASES = {
+  // Dairy
   dairy: ["milk", "cream", "cheese", "yoghurt", "yogurt"],
+  // Drinks (non-alcoholic)
   drink: ["juice", "water", "soda", "milk"],
   drinks: ["juice", "water", "soda", "milk"],
   beverage: ["juice", "water", "soda", "milk"],
   beverages: ["juice", "water", "soda", "milk"],
-  breakfast: ["bread", "milk", "tea", "coffee", "cereal"],
-  baby: ["baby", "lactogen", "milk", "wipes"],
+  // Alcoholic drinks — real Rwandan catalog brands
   beer: ["miitzig", "amstel", "heineken", "corona", "guinness", "leffe", "skol", "legend"],
   beers: ["miitzig", "amstel", "heineken", "corona", "guinness", "leffe", "skol", "legend"],
   alcohol: ["miitzig", "amstel", "heineken", "whisky", "wine", "beer", "vodka", "cognac"],
   alcoholic: ["miitzig", "amstel", "heineken", "whisky", "wine", "beer", "vodka", "cognac"],
   spirits: ["whisky", "vodka", "gin", "rum", "cognac", "brandy"],
-  wine: ["wine", "champagne", "sparkling", "merlot", "cabernet"],
-  wines: ["wine", "champagne", "sparkling", "merlot", "cabernet"],
-  whisky: ["whisky", "whiskey", "scotch", "bond", "black label"],
+  wine: ["wine", "champagne", "sparkling", "chamdor", "cinzano"],
+  wines: ["wine", "champagne", "sparkling", "chamdor", "cinzano"],
+  champagne: ["champagne", "sparkling", "cinzano", "eva"],
+  whisky: ["whisky", "whiskey", "scotch", "bond", "black label", "belle france"],
   whiskey: ["whisky", "whiskey", "scotch", "bond"],
+  cognac: ["cognac", "abk6", "reviseur"],
+  vodka: ["vodka", "gin", "rum"],
+  // Food & meals
+  breakfast: ["bread", "milk", "tea", "coffee", "cereal", "flour"],
+  snack: ["biscuit", "crisp", "chips", "chocolate", "candy", "sweet"],
+  snacks: ["biscuit", "crisp", "chips", "chocolate", "candy", "sweet"],
+  meat: ["beef", "chicken", "sausage", "corned beef", "luncheon", "smokies"],
+  sauce: ["ketchup", "mayonnaise", "chilli", "tomato sauce", "soy"],
+  condiments: ["ketchup", "mayonnaise", "chilli", "vinegar"],
+  // Staples
+  rice: ["basmati", "rice", "jasmine"],
+  grains: ["rice", "couscous", "flour", "maize", "wheat", "cereal"],
+  oil: ["sunflower oil", "olive oil", "cooking oil", "avocado oil"],
+  flour: ["wheat flour", "maize flour", "corn flour", "baking flour"],
+  sugar: ["sugar", "icing sugar"],
+  // Baby
+  baby: ["baby", "lactogen", "diapers", "wipes", "pampers", "huggies"],
+  diapers: ["diapers", "pampers", "huggies", "nappies", "baby"],
+  // Cleaning
+  cleaning: ["detergent", "bleach", "disinfectant", "cleaner", "soap", "sanitizer"],
+  detergent: ["detergent", "washing powder", "laundry", "fabric"],
+  laundry: ["detergent", "washing powder", "fabric softener"],
+  bleach: ["bleach", "jik", "disinfectant", "sanitizer"],
+  toiletpaper: ["toilet paper", "tissue", "paper", "wipes"],
+  // Beauty & personal care
+  beauty: ["shampoo", "conditioner", "lotion", "cream", "perfume", "soap", "deodorant"],
+  cosmetics: ["makeup", "lipstick", "foundation", "mascara", "eyeshadow", "nail"],
+  skincare: ["lotion", "cream", "moisturizer", "sunscreen", "face wash"],
+  haircare: ["shampoo", "conditioner", "hair oil", "hair treatment"],
+  soap: ["soap", "body wash", "shower gel", "hand wash"],
+  shampoo: ["shampoo", "conditioner", "hair"],
+  perfume: ["perfume", "cologne", "body spray", "deodorant"],
+  deodorant: ["deodorant", "antiperspirant", "body spray"],
+  toothpaste: ["toothpaste", "toothbrush", "mouthwash", "dental"],
+  // Kitchen
+  cookware: ["pot", "pan", "frying pan", "wok", "saucepan"],
+  pots: ["pot", "saucepan", "pressure cooker", "casserole"],
+  appliances: ["iron", "kettle", "blender", "toaster", "microwave"],
+  // Pet
+  pet: ["pet food", "dog food", "cat food", "animal"],
+  dog: ["dog food", "pet", "animal"],
+  cat: ["cat food", "pet", "animal"],
+  // Storage
+  containers: ["container", "canister", "jar", "storage box", "organizer"],
 };
 
 function normalizeSearchText(value) {
