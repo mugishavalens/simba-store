@@ -27,6 +27,7 @@ const state = {
   cart: readStorage(STORAGE_KEYS.cart, []),
   filters: { ...DEFAULT_FILTERS },
   search: "",
+  searchDisplay: "",
   theme: readStorage(STORAGE_KEYS.theme, "light"),
   language: readStorage(STORAGE_KEYS.language, "en"),
   users: session.users,
@@ -416,6 +417,11 @@ export function seedDemoBranchOrders(branchId) {
 
 export function setSearch(value) {
   state.search = value;
+  emit();
+}
+
+export function setSearchDisplay(value) {
+  state.searchDisplay = value;
   emit();
 }
 

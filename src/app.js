@@ -49,6 +49,7 @@ import {
   setAuthFeedback,
   setLanguage,
   setSearch,
+  setSearchDisplay,
   setTheme,
   signOut,
   subscribe,
@@ -598,7 +599,7 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
               <div class="discover-row">
                 <label class="searchbar searchbar--inline">
                   <span class="searchbar__icon">&#8981;</span>
-                  <input id="search-input" value="${escapeHtml(state.search)}" placeholder="${tr("searchPlaceholder")}" />
+                  <input id="search-input" value="${escapeHtml(state.searchDisplay)}" placeholder="${tr("searchPlaceholder")}" />
                 </label>
                 <div class="discover-filters">
                   <select class="select select--compact" id="category-filter">
@@ -3447,10 +3448,7 @@ function bindEvents(currentRoute) {
 
     async function runAiSearch(rawValue) {
       const trimmed = rawValue.trim();
-      if (trimmed.length < 3) {
-        setSearch(rawValue);
-        return;
-      }
+      if (trimmed.length < 3) return;
       if (trimmed === lastAiQuery) return;
       lastAiQuery = trimmed;
 
@@ -3469,10 +3467,10 @@ function bindEvents(currentRoute) {
         });
         if (!res.ok) throw new Error("ai-search failed");
         const { searchTerm } = await res.json();
-        setSearch(searchTerm || rawValue);
+        setSearch(searchTerm || trimmed);
       } catch (err) {
         if (err.name !== "AbortError") {
-          setSearch(rawValue);
+          setSearch(trimmed);
         }
       } finally {
         const el = document.querySelector("#search-input");
@@ -3482,6 +3480,7 @@ function bindEvents(currentRoute) {
 
     input.addEventListener("input", (event) => {
       const value = event.target.value;
+      setSearchDisplay(value);
       setSearch(value);
       clearTimeout(aiDebounceTimer);
       if (value.trim().length >= 3) {
