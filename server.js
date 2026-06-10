@@ -91,19 +91,33 @@ async function handleAiSearch(req, res) {
           {
             role: "system",
             content: `You are a search assistant for Simba Supermarket in Rwanda.
-The user types a natural language query. Your job is to extract the core product search term(s) to use against the product catalog.
+The user types a natural language query. Extract the core product search term(s) AND preserve any price constraint.
+
 Rules:
-- Return ONLY a short search phrase (1-4 words) — no explanation, no punctuation, no quotes.
+- Return ONLY a short phrase — no explanation, no punctuation, no quotes.
 - Strip filler words like "i want", "show me", "find", "i need", "give me", "looking for", "things for".
-- Map intents to product keywords: breakfast → bread milk tea cereal, drinks → juice water soda, cleaning → detergent soap bleach, baby → lactogen wipes diapers.
-- If the query already contains a product name, return it directly.
+- IMPORTANT: If the query contains a price limit (under X, below X, less than X, under X rwf), append it exactly to the output, e.g. "beer under 5000" or "milk under 1000 rwf".
+- Map intents to product keywords using these real Rwandan supermarket brands:
+    alcohol / beer → miitzig amstel heineken corona
+    wine / champagne → wine sparkling eva chamdor
+    whisky / spirits → whisky bond cognac vodka
+    breakfast → bread milk tea cereal
+    drinks / beverages → juice water soda
+    cleaning → detergent soap bleach
+    baby → lactogen wipes diapers
+- If the query already contains a product name, return it directly (with price if present).
 - If no clear product intent, return the most relevant noun(s).
+
 Examples:
   "i want things for breakfast" → "bread milk cereal"
-  "i want to alcohol" → "beer wine spirits"
+  "i want alcohol" → "miitzig amstel heineken beer"
+  "i want alcohol under 5000" → "miitzig amstel heineken beer under 5000"
+  "i want to alcohol" → "miitzig amstel heineken beer"
+  "cheap beer" → "miitzig amstel beer"
   "something to clean the floor" → "floor cleaner mop"
   "snacks for kids" → "biscuits crisps snacks"
-  "milk under 1000" → "milk"`,
+  "milk under 1000" → "milk under 1000"
+  "whisky under 15000" → "whisky under 15000"`,
           },
           { role: "user", content: query },
         ],

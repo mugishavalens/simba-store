@@ -109,6 +109,15 @@ const SEARCH_ALIASES = {
   beverages: ["juice", "water", "soda", "milk"],
   breakfast: ["bread", "milk", "tea", "coffee", "cereal"],
   baby: ["baby", "lactogen", "milk", "wipes"],
+  beer: ["miitzig", "amstel", "heineken", "corona", "guinness", "leffe", "skol", "legend"],
+  beers: ["miitzig", "amstel", "heineken", "corona", "guinness", "leffe", "skol", "legend"],
+  alcohol: ["miitzig", "amstel", "heineken", "whisky", "wine", "beer", "vodka", "cognac"],
+  alcoholic: ["miitzig", "amstel", "heineken", "whisky", "wine", "beer", "vodka", "cognac"],
+  spirits: ["whisky", "vodka", "gin", "rum", "cognac", "brandy"],
+  wine: ["wine", "champagne", "sparkling", "merlot", "cabernet"],
+  wines: ["wine", "champagne", "sparkling", "merlot", "cabernet"],
+  whisky: ["whisky", "whiskey", "scotch", "bond", "black label"],
+  whiskey: ["whisky", "whiskey", "scotch", "bond"],
 };
 
 function normalizeSearchText(value) {
