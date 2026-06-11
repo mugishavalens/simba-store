@@ -265,6 +265,15 @@ let assistantPosition = null;
 let assistantSuppressClick = false;
 
 window.addEventListener("hashchange", render);
+window.addEventListener("simba:language-change", (event) => {
+  const language = event.detail?.language;
+  if (LANGUAGES.includes(language) && getState().language !== language) {
+    setLanguage(language);
+  }
+});
+window.addEventListener("simba:enter-store", () => {
+  if (!getState().languageWelcomeSeen) dismissLanguageWelcome();
+});
 subscribe(() => render());
 
 boot();
@@ -419,10 +428,6 @@ function render() {
     ${renderMomoProcessing(state, tr)}
     ${renderLiveToast()}
   `;
-
-  // Hide the static (pre-hydration) splash now that the SPA is rendering.
-  const splash = document.getElementById("static-splash");
-  if (splash && splash.parentNode) splash.parentNode.removeChild(splash);
 
   bindEvents(currentRoute);
   restoreSearchInputState();
@@ -1800,6 +1805,41 @@ function inferAssistantCategories(query, categories) {
 
 const ASSISTANT_SMALL_RESULT_LIMIT = 12;
 const ASSISTANT_LARGE_RESULT_LIMIT = 8;
+const ASSISTANT_LOCAL_LABELS = {
+  en: {
+    moreMatches: (count) => ` There are ${count} more matching products in the catalog.`,
+    authHelp: "Sign in or create a customer account first, then you can use the cart, checkout, wishlist, and shop assistant.",
+    cartHelp: "Open a product, add it to your cart, then use the cart panel to change quantities or remove items before checkout.",
+    checkoutHelp: "Add products to your cart, go to checkout, enter your delivery details, choose a payment method, and place the order.",
+    paymentHelp: "At checkout you can use the MoMo deposit flow, demo card authorization, or cash on delivery depending on what is available.",
+    branchHelp: (branches) => `For branch pickup, choose a pickup branch during checkout. Available branches include ${branches}.`,
+    supportHelp: "For support, contact hello@simba.rw or +250 788 123 456.",
+    categoriesInfo: (count, categories) => `This store has ${count} categories: ${categories}.`,
+    productCountInfo: (total, inStock, categoryCount) => `This store currently has ${total} products in the catalog. ${inStock} are marked in stock across ${categoryCount} categories.`,
+  },
+  fr: {
+    moreMatches: (count) => ` Il y a ${count} autres produits correspondants dans le catalogue.`,
+    authHelp: "Connectez-vous ou creez d'abord un compte client, puis vous pourrez utiliser le panier, le paiement, la liste d'envies et l'assistant.",
+    cartHelp: "Ouvrez un produit, ajoutez-le au panier, puis utilisez le panneau du panier pour modifier les quantites ou retirer des articles avant le paiement.",
+    checkoutHelp: "Ajoutez des produits au panier, passez au paiement, entrez vos informations, choisissez un mode de paiement et confirmez la commande.",
+    paymentHelp: "Au paiement, vous pouvez utiliser le depot MoMo, l'autorisation carte de demo ou le paiement en especes selon les options disponibles.",
+    branchHelp: (branches) => `Pour le retrait, choisissez une succursale pendant le paiement. Les succursales disponibles incluent ${branches}.`,
+    supportHelp: "Pour l'assistance, contactez hello@simba.rw ou +250 788 123 456.",
+    categoriesInfo: (count, categories) => `Ce magasin compte ${count} categories : ${categories}.`,
+    productCountInfo: (total, inStock, categoryCount) => `Ce magasin contient actuellement ${total} produits dans le catalogue. ${inStock} sont marques en stock dans ${categoryCount} categories.`,
+  },
+  rw: {
+    moreMatches: (count) => ` Hari ibindi bicuruzwa ${count} bihuye biri muri kataloge.`,
+    authHelp: "Banza winjire cyangwa ukore konti y'umukiriya, hanyuma ukoreshe agatebo, checkout, wishlist n'umufasha wo guhaha.",
+    cartHelp: "Fungura igicuruzwa, ukongere mu gatebo, hanyuma ukoreshe agatebo uhindure ingano cyangwa ukuremo ibicuruzwa mbere yo kwishyura.",
+    checkoutHelp: "Shyira ibicuruzwa mu gatebo, ujye kuri checkout, wuzuze amakuru yawe, uhitemo uburyo bwo kwishyura, maze wohereze commande.",
+    paymentHelp: "Kuri checkout ushobora gukoresha deposit ya MoMo, ikarita ya demo, cyangwa cash bitewe n'ibihari.",
+    branchHelp: (branches) => `Ku gufata ibicuruzwa mu ishami, hitamo ishami kuri checkout. Amashami ahari arimo ${branches}.`,
+    supportHelp: "Ku bufasha, twandikire kuri hello@simba.rw cyangwa +250 788 123 456.",
+    categoriesInfo: (count, categories) => `Iri duka rifite ibyiciro ${count}: ${categories}.`,
+    productCountInfo: (total, inStock, categoryCount) => `Iri duka rifite ibicuruzwa ${total} muri kataloge. ${inStock} biri muri stock mu byiciro ${categoryCount}.`,
+  },
+};
 
 function getAssistantProductMatches(products, rawQuery) {
   const matches = searchProducts(products, rawQuery, { stock: "in" })
@@ -1819,37 +1859,49 @@ function formatAssistantProductList(products) {
   return products.map((product) => `${product.name} (${formatPrice(product.price)})`).join(", ");
 }
 
-function buildDeterministicAssistantProductText(matches, tr) {
+function getAssistantLocalLabels(language) {
+  return ASSISTANT_LOCAL_LABELS[language] || ASSISTANT_LOCAL_LABELS.en;
+}
+
+function formatAssistantCategories(language, categories) {
+  return categories.map((category) => translateCategory(language, category)).join(", ");
+}
+
+function buildDeterministicAssistantProductText(matches, tr, language = "en") {
+  const labels = getAssistantLocalLabels(language);
   const suffix = matches.hiddenCount
-    ? ` There are ${matches.hiddenCount} more matching products in the catalog.`
+    ? labels.moreMatches(matches.hiddenCount)
     : "";
   return `${tr("assistantDirectReply")} ${formatAssistantProductList(matches.visible)}.${suffix}`;
 }
 
-function buildLocalAssistantHelpReply(rawQuery) {
+function buildLocalAssistantHelpReply(rawQuery, language = "en") {
   const query = normalizeAssistantToken(rawQuery);
+  const labels = getAssistantLocalLabels(language);
   if (/\b(sign|signin|login|account|register|create account)\b/.test(query)) {
-    return "Sign in or create a customer account first, then you can use the cart, checkout, wishlist, and shop assistant.";
+    return labels.authHelp;
   }
   if (/\b(cart|basket|add|remove|quantity)\b/.test(query)) {
-    return "Open a product, add it to your cart, then use the cart panel to change quantities or remove items before checkout.";
+    return labels.cartHelp;
   }
   if (/\b(checkout|order|buy|purchase|place order)\b/.test(query)) {
-    return "Add products to your cart, go to checkout, enter your delivery details, choose a payment method, and place the order.";
+    return labels.checkoutHelp;
   }
   if (/\b(momo|mobile money|payment|pay|card|cash|deposit)\b/.test(query)) {
-    return "At checkout you can use the MoMo deposit flow, demo card authorization, or cash on delivery depending on what is available.";
+    return labels.paymentHelp;
   }
   if (/\b(branch|pickup|pick up|location)\b/.test(query)) {
-    return `For branch pickup, choose a pickup branch during checkout. Available branches include ${SIMBA_BRANCHES.map((branch) => branch.name).join(", ")}.`;
+    return labels.branchHelp(SIMBA_BRANCHES.map((branch) => branch.name).join(", "));
   }
   if (/\b(support|help|contact|phone|email)\b/.test(query)) {
-    return "For support, contact hello@simba.rw or +250 788 123 456.";
+    return labels.supportHelp;
   }
   return "";
 }
 
 function buildAssistantStoreInfoReply(state, rawQuery) {
+  const language = state.language || "en";
+  const labels = getAssistantLocalLabels(language);
   const query = normalizeAssistantToken(rawQuery);
   const products = Array.isArray(state.products) ? state.products : [];
   const categories = getCategories(products);
@@ -1862,7 +1914,7 @@ function buildAssistantStoreInfoReply(state, rawQuery) {
 
   if (asksForCategories) {
     return {
-      text: `This store has ${categories.length} categories: ${categories.join(", ")}.`,
+      text: labels.categoriesInfo(categories.length, formatAssistantCategories(language, categories)),
       products: [],
     };
   }
@@ -1870,7 +1922,7 @@ function buildAssistantStoreInfoReply(state, rawQuery) {
   if (asksForProductCount) {
     const inStockCount = products.filter((product) => product.inStock).length;
     return {
-      text: `This store currently has ${products.length} products in the catalog. ${inStockCount} are marked in stock across ${categories.length} categories.`,
+      text: labels.productCountInfo(products.length, inStockCount, categories.length),
       products: [],
     };
   }
@@ -1878,11 +1930,81 @@ function buildAssistantStoreInfoReply(state, rawQuery) {
   return null;
 }
 
+function parseAssistantCartCommand(rawQuery, products) {
+  const original = String(rawQuery || "").trim();
+  const query = normalizeAssistantToken(original);
+  if (!query) return null;
+
+  const asksHow =
+    /\b(how|can|could|help|explain|where|what)\b/.test(query) &&
+    /\b(add|cart|basket)\b/.test(query);
+  const hasCartTarget = /\b(cart|basket|bag)\b/.test(query);
+  const hasAddVerb = /\b(add|put|place|drop|send)\b/.test(query);
+  if (asksHow || !hasAddVerb || !hasCartTarget) return null;
+
+  const quantityMatch =
+    query.match(/\b(?:add|put|place|drop|send)\s+(\d{1,2})\b/) ||
+    query.match(/\b(\d{1,2})\s+(?:of|x)?\b/);
+  const quantity = quantityMatch
+    ? Math.min(20, Math.max(1, Number(quantityMatch[1]) || 1))
+    : 1;
+
+  const productQuery = query
+    .replace(/\b(?:please|kindly|can you|could you|i want|i need|for me)\b/g, " ")
+    .replace(/\b(?:add|put|place|drop|send|to|into|in|my|the|cart|basket|bag)\b/g, " ")
+    .replace(/\b\d{1,2}\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (productQuery.length < 2) return null;
+
+  const match = searchProducts(products || [], productQuery, { stock: "in" })
+    .filter((entry) => entry.score > 0)
+    .map((entry) => entry.product)[0];
+
+  if (!match) {
+    return { product: null, quantity, productQuery };
+  }
+
+  return { product: match, quantity, productQuery };
+}
+
+function buildAssistantCartReply(state, command, tr) {
+  if (!command?.product) {
+    const categories = getCategories(state.products || []);
+    return {
+      text: `${tr("assistantNoMatch")} ${formatAssistantCategories(state.language || "en", categories.slice(0, 4))}.`,
+      products: [],
+      cartProductId: null,
+      cartQuantity: 0,
+    };
+  }
+
+  const product = command.product;
+  const quantity = command.quantity || 1;
+  const language = state.language || "en";
+  const text = language === "fr"
+    ? `${quantity} x ${product.name} a ete ajoute au panier.`
+    : language === "rw"
+    ? `${quantity} x ${product.name} cyashyizwe mu gatebo.`
+    : `${quantity} x ${product.name} has been added to your cart.`;
+
+  return {
+    text,
+    products: [product],
+    cartProductId: Number(product.id),
+    cartQuantity: quantity,
+  };
+}
+
 async function buildAssistantReply(state, rawQuery, tr) {
   const language = state.language || "en";
   const langName = language === "rw" ? "Kinyarwanda" : language === "fr" ? "French" : "English";
   const storeInfoReply = buildAssistantStoreInfoReply(state, rawQuery);
   if (storeInfoReply) return storeInfoReply;
+
+  const cartCommand = parseAssistantCartCommand(rawQuery, state.products);
+  if (cartCommand) return buildAssistantCartReply(state, cartCommand, tr);
 
   const groqKey = localStorage.getItem("simba.groq-api-key") || "";
   const matches = getAssistantProductMatches(state.products, rawQuery);
@@ -1947,13 +2069,13 @@ function buildSmartLocalAssistantReply(state, rawQuery, tr, precomputedMatches =
   const matches = precomputedMatches || getAssistantProductMatches(state.products, rawQuery);
 
   if (!matches.visible.length) {
-    const helpReply = buildLocalAssistantHelpReply(rawQuery);
+    const helpReply = buildLocalAssistantHelpReply(rawQuery, state.language || "en");
     if (helpReply) return { text: helpReply, products: [] };
-    return { text: `${tr("assistantNoMatch")} ${categories.slice(0, 4).join(", ")}.`, products: [] };
+    return { text: `${tr("assistantNoMatch")} ${formatAssistantCategories(state.language || "en", categories.slice(0, 4))}.`, products: [] };
   }
 
   return {
-    text: buildDeterministicAssistantProductText(matches, tr),
+    text: buildDeterministicAssistantProductText(matches, tr, state.language || "en"),
     products: matches.visible,
   };
 }
@@ -2042,7 +2164,7 @@ function buildLocalAssistantReply(state, rawQuery, tr) {
     .map((e) => e.p);
 
   if (!scored.length) {
-    return { text: `${tr("assistantNoMatch")} ${categories.slice(0, 4).join(", ")}.`, products: [] };
+    return { text: `${tr("assistantNoMatch")} ${formatAssistantCategories(state.language || "en", categories.slice(0, 4))}.`, products: [] };
   }
   const intro = tr("assistantDirectReply");
   return { text: `${intro} ${scored.map((p) => p.name).slice(0, 3).join(", ")}.`, products: scored };
@@ -2460,28 +2582,30 @@ function renderAdminView(state, filteredProducts, tr) {
   const customers = state.users.filter((user) => user.role === "customer");
   const recentOrders = state.orders.slice(0, 8);
   const adminNotifications = getAdminNotifications(state, tr);
-  const customerNotificationCount = adminNotifications.customerMessages.length;
-  const productNotificationCount = adminNotifications.productUpdates.length;
-  const activeTab = state.adminTab || "overview";
-  const tabs = [
-    { id: "overview", label: tr("adminTabOverview") },
-    { id: "products", label: tr("adminTabProducts") },
-    { id: "suppliers", label: tr("adminTabSuppliers") },
-    { id: "promotions", label: tr("adminTabPromotions") },
-    { id: "reports", label: tr("adminTabReports") },
-    { id: "customers", label: tr("adminTabCustomers") },
-    { id: "orders", label: tr("adminTabOrders") },
-  ];
 
-  const tabContent = (() => {
-    if (activeTab === "products") return renderAdminProductsTab(state, visibleProducts, tr);
-    if (activeTab === "suppliers") return renderAdminSuppliersTab(state, tr);
-    if (activeTab === "promotions") return renderAdminPromotionsTab(state, tr);
-    if (activeTab === "reports") return renderAdminReportsTab(state, tr);
-    if (activeTab === "customers") return renderAdminCustomersTab(state, customers, tr);
-    if (activeTab === "orders") return renderAdminOrdersTab(state, recentOrders, tr);
-    return renderAdminOverviewTab(state, customers, adminNotifications, tr);
-  })();
+  let tabContent = "";
+  switch (state.adminTab) {
+    case "products":
+      tabContent = renderAdminProductsTab(state, visibleProducts, tr);
+      break;
+    case "suppliers":
+      tabContent = renderAdminSuppliersTab(state, tr);
+      break;
+    case "promotions":
+      tabContent = renderAdminPromotionsTab(state, tr);
+      break;
+    case "reports":
+      tabContent = renderAdminReportsTab(state, tr);
+      break;
+    case "customers":
+      tabContent = renderAdminCustomersTab(state, customers, tr);
+      break;
+    case "orders":
+      tabContent = renderAdminOrdersTab(state, recentOrders, tr);
+      break;
+    default:
+      tabContent = renderAdminOverviewTab(state, customers, adminNotifications, tr);
+  }
 
   return `
     <main class="section admin-layout">
@@ -2494,17 +2618,6 @@ function renderAdminView(state, filteredProducts, tr) {
           <span class="pill">${state.products.length} ${tr("statProducts")}</span>
         </div>
         ${feedback}
-        <div class="admin-tabs" role="tablist">
-          ${tabs.map((tab) => `
-            <button type="button" role="tab"
-              class="admin-tab ${activeTab === tab.id ? "admin-tab--active" : ""}"
-              data-admin-tab="${tab.id}">
-              ${escapeHtml(tab.label)}
-              ${tab.id === "customers" && customerNotificationCount ? `<span class="notification-count">${customerNotificationCount}</span>` : ""}
-              ${tab.id === "products" && productNotificationCount ? `<span class="notification-count">${productNotificationCount}</span>` : ""}
-            </button>
-          `).join("")}
-        </div>
         ${tabContent}
       </section>
     </main>
@@ -3391,7 +3504,9 @@ function bindEvents(currentRoute) {
       ticking = true;
       requestAnimationFrame(() => {
         const currentY = window.scrollY;
-        const shouldHide = currentY > lastScrollY && currentY > 80;
+        const isCompactHeader = window.matchMedia("(max-width: 759px)").matches;
+        const searchFocused = document.activeElement?.id === "search-input";
+        const shouldHide = !isCompactHeader && !searchFocused && currentY > lastScrollY && currentY > 80;
         if (shouldHide !== discoverPanelHidden) {
           discoverPanelHidden = shouldHide;
           const panel = document.querySelector(".discover-panel");
@@ -3455,21 +3570,26 @@ function bindEvents(currentRoute) {
       if (aiController) aiController.abort();
       aiController = new AbortController();
 
-      const searchEl = document.querySelector("#search-input");
+      const searchEl = document.querySelector("#search-input")?.closest(".searchbar");
       if (searchEl) searchEl.classList.add("search--ai-loading");
 
       try {
+        const groqKey = localStorage.getItem("simba.groq-api-key") || "";
         const res = await fetch("/api/ai-search", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: trimmed }),
+          headers: {
+            "Content-Type": "application/json",
+            ...(groqKey ? { "X-Groq-Api-Key": groqKey } : {}),
+          },
+          body: JSON.stringify({ query: trimmed, apiKey: groqKey }),
           signal: aiController.signal,
         });
         if (!res.ok) throw new Error("ai-search failed");
         const data = await res.json();
         const { searchTerm, category } = data;
         setSearch(searchTerm || trimmed);
-        if (category && category !== "all") {
+        const validCategories = getCategories(getState().products);
+        if (category && category !== "all" && validCategories.includes(category)) {
           setFilter("category", category);
           const catEl = document.querySelector("#category-filter");
           if (catEl) catEl.value = category;
@@ -3479,7 +3599,7 @@ function bindEvents(currentRoute) {
           setSearch(trimmed);
         }
       } finally {
-        const el = document.querySelector("#search-input");
+        const el = document.querySelector("#search-input")?.closest(".searchbar");
         if (el) el.classList.remove("search--ai-loading");
       }
     }
@@ -3513,7 +3633,12 @@ function bindEvents(currentRoute) {
       }
     });
   })();
-  document.querySelector("#category-filter")?.addEventListener("change", (event) => setFilter("category", event.target.value));
+  document.querySelector("#category-filter")?.addEventListener("change", (event) => {
+    const category = event.target.value;
+    setFilter("category", category);
+    setSearch(getState().search || "");
+    render();
+  });
   document.querySelector("#price-filter")?.addEventListener("change", (event) => setFilter("price", event.target.value));
   document.querySelector("#stock-filter")?.addEventListener("change", (event) => setFilter("stock", event.target.value));
   document.querySelector("#sort-filter")?.addEventListener("change", (event) => setFilter("sort", event.target.value));
@@ -4182,6 +4307,9 @@ function bindEvents(currentRoute) {
 
     const reply = await buildAssistantReply(getState(), message, (key) => t(getState().language, key));
     assistantPending = false;
+    if (reply.cartProductId) {
+      addToCart(Number(reply.cartProductId), Number(reply.cartQuantity) || 1);
+    }
     setAssistantMessages([
       ...nextMessages,
       { id: Date.now() + 1, role: "assistant", text: reply.text, products: reply.products },
@@ -5127,7 +5255,13 @@ function isGoogleConfigured() {
 }
 
 function getGoogleRedirectUri() {
-  return window.location.origin + "/index.html";
+  // Get the configured redirect URI or construct from current location
+  const configured = document.querySelector('meta[name="google-redirect-uri"]')?.content || "";
+  if (configured) return configured;
+  
+  const origin = window.location.origin || `${window.location.protocol}//${window.location.host}`;
+  // Use the base origin with /index.html path for compatibility
+  return "https://aaqyatojbyhlcaozmyuh.supabase.co/auth/v1/callback";
 }
 
 function startGoogleRedirect() {

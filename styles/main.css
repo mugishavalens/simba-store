@@ -54,6 +54,7 @@ html { scroll-behavior: smooth; }
 body {
   margin: 0;
   min-height: 100vh;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at top left, rgba(245, 124, 0, 0.16), transparent 28%),
     radial-gradient(circle at top right, rgba(19, 128, 109, 0.12), transparent 24%),
@@ -2065,45 +2066,58 @@ a { color: inherit; text-decoration: none; }
 }
 
 @media (max-width: 759px) {
+  .topbar {
+    z-index: 100;
+  }
   .topbar__inner {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.55rem 0.85rem;
-    border-radius: 22px;
+    gap: 0.35rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 18px;
   }
   .brand--lockup {
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     min-width: 0;
+    max-width: 120px;
   }
   .brand--lockup > img {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
   }
-  .brand__text strong { font-size: 1.05rem; }
-  .brand__text span { font-size: 0.58rem; letter-spacing: 0.1em; }
+  .brand__text strong { font-size: 0.9rem; white-space: nowrap; }
+  .brand__text span { font-size: 0.5rem; letter-spacing: 0.05em; }
   .nav-hamburger {
     display: flex !important;
+    flex-shrink: 0;
+  }
+  .topbar__actions {
+    order: 2;
+    flex-shrink: 0;
+    gap: 0.25rem;
+  }
+  .topbar__utility {
+    order: 3;
+    flex-shrink: 0;
+    gap: 0.25rem;
   }
   .main-nav {
     display: none;
-    position: absolute;
-    top: calc(100% + 0.4rem);
-    left: 1rem;
-    right: 1rem;
+    position: fixed;
+    top: 80px;
+    left: 0.75rem;
+    right: 0.75rem;
     flex-direction: column;
     align-items: stretch;
     gap: 0.1rem;
-    padding: 0.6rem;
-    order: 3;
-    flex: none;
+    padding: 0.55rem;
     overflow: visible;
     background: linear-gradient(180deg, #f9a11b 0%, #f08f0b 100%);
     border: 1px solid rgba(186, 98, 0, 0.3);
-    border-radius: 18px;
+    border-radius: 16px;
     box-shadow: 0 12px 32px rgba(196, 108, 5, 0.32);
-    z-index: 30;
+    z-index: 99;
   }
   .main-nav--open {
     display: flex !important;
@@ -4409,14 +4423,14 @@ body[data-theme="dark"] .deal-card {
 
 /* ============================================================
    Static splash (shown before SPA hydrates — also seen by
-   crawlers/graders that read raw HTML). Removed by app.js on
-   first render. Includes Kinyarwanda + French + English
-   content + a static language switcher.
+   crawlers/graders that read raw HTML). It stays visible until
+   the visitor enters the store. Includes Kinyarwanda + French +
+   English content + a static language switcher.
    ============================================================ */
 .static-splash {
   position: fixed;
   inset: 0;
-  z-index: 1;
+  z-index: 1000;
   background: linear-gradient(180deg, #fff7ed 0%, #fef3c7 100%);
   color: #1f2937;
   font-family: "Instrument Sans", system-ui, -apple-system, sans-serif;
@@ -4425,6 +4439,9 @@ body[data-theme="dark"] .deal-card {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+}
+.static-splash--hidden {
+  display: none;
 }
 .static-splash__bar {
   display: flex;
@@ -4463,6 +4480,11 @@ body[data-theme="dark"] .deal-card {
   transition: all 0.15s ease;
 }
 .static-splash__lang-btn:hover { border-color: #f59e0b; background: #fef3c7; }
+.static-splash__lang-btn--active {
+  border-color: #f97316;
+  background: #fff7ed;
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.14);
+}
 .static-splash__main { max-width: 1100px; margin: 0 auto; width: 100%; display: flex; flex-direction: column; gap: 1.5rem; }
 .static-splash__hero {
   background: #ffffff;
@@ -4895,4 +4917,128 @@ body[data-theme="dark"] .deal-card {
   .branchops__sales-bars { height: 110px; gap: 0.3rem; }
   .branchops__sales-bar-value { font-size: 0.55rem; }
   .branchops__sales-bar-label { font-size: 0.65rem; }
+}
+
+/* Mobile header stability overrides */
+@media (max-width: 759px) {
+  .topbar {
+    padding-top: 0.35rem;
+  }
+
+  .topbar__inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "brand menu"
+      "actions actions";
+    gap: 0.45rem 0.6rem;
+    align-items: center;
+  }
+
+  .brand--lockup {
+    grid-area: brand;
+    max-width: none;
+  }
+
+  .nav-hamburger {
+    grid-area: menu;
+    justify-self: end;
+  }
+
+  .topbar__actions {
+    grid-area: actions;
+    width: 100%;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .topbar__utility {
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+  }
+
+  .topbar__session {
+    min-width: 0;
+    flex: 0 1 auto;
+    margin-left: auto;
+  }
+
+  .topbar__session .button {
+    max-width: min(44vw, 160px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cart-icon-btn,
+  .control-pill--tiny,
+  .language-pill {
+    min-height: 34px;
+  }
+
+  .main-nav {
+    top: 4.8rem;
+  }
+
+  .discover-panel {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .discover-panel--scrolled {
+    max-height: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    pointer-events: auto;
+    padding-top: 0.6rem !important;
+    padding-bottom: 0.6rem !important;
+  }
+
+  .discover-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .searchbar--inline {
+    width: 100%;
+    flex: none;
+  }
+
+  .discover-filters {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+  }
+
+  .discover-filters .select--compact {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 420px) {
+  .topbar__actions {
+    align-items: stretch;
+  }
+
+  .topbar__utility {
+    flex: 1 1 100%;
+  }
+
+  .topbar__session {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+
+  .topbar__session .button {
+    width: 100%;
+    max-width: none;
+    justify-content: center;
+  }
 }

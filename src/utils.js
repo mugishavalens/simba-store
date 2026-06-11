@@ -78,6 +78,7 @@ const SEARCH_STOP_WORDS = new Set([
   "looking",
   "me",
   "need",
+  "needs",
   "of",
   "over",
   "please",
@@ -90,6 +91,8 @@ const SEARCH_STOP_WORDS = new Set([
   "see",
   "show",
   "some",
+  "something",
+  "someone",
   "that",
   "the",
   "than",
@@ -97,8 +100,10 @@ const SEARCH_STOP_WORDS = new Set([
   "under",
   "up",
   "want",
+  "wanting",
   "with",
   "would",
+  "you",
 ]);
 
 const SEARCH_ALIASES = {
@@ -124,6 +129,11 @@ const SEARCH_ALIASES = {
   vodka: ["vodka", "gin", "rum"],
   // Food & meals
   breakfast: ["bread", "milk", "tea", "coffee", "cereal", "flour"],
+  lunch: ["rice", "bread", "chicken", "meat", "snack", "canned food"],
+  dinner: ["rice", "bread", "chicken", "meat", "pasta", "canned food", "sauce"],
+  meal: ["rice", "bread", "chicken", "meat", "snack", "dinner", "lunch"],
+  food: ["rice", "bread", "chicken", "meat", "canned food", "snack"],
+  shopping: ["rice", "bread", "chicken", "meat", "oil", "sugar", "flour"],
   snack: ["biscuit", "crisp", "chips", "chocolate", "candy", "sweet"],
   snacks: ["biscuit", "crisp", "chips", "chocolate", "candy", "sweet"],
   meat: ["beef", "chicken", "sausage", "corned beef", "luncheon", "smokies"],
@@ -323,7 +333,9 @@ export function searchProducts(products, search, filters = {}) {
     }))
     .filter(({ product, score }) => {
       const productText = `${normalizeSearchText(product.name)} ${normalizeSearchText(product.category)}`;
-      const matchesPrimary = !primaryTokens.length || primaryTokens.some((entry) => hasTokenMatch(productText, entry.token));
+      const matchesPrimary =
+        !primaryTokens.length ||
+        queryTokens.some((entry) => hasTokenMatch(productText, entry.token));
       const matchesSearch = !query || (score > 0 && matchesPrimary);
       const matchesIntentPrice =
         (intent.maxPrice === null ||

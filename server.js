@@ -57,14 +57,15 @@ async function readBody(req) {
 async function handleAiSearch(req, res) {
   try {
     const raw = await readBody(req);
-    const { query } = JSON.parse(raw);
+    const { query, apiKey: bodyApiKey } = JSON.parse(raw);
     if (!query || typeof query !== "string") {
       res.writeHead(400, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "query required" }));
       return;
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
+    const requestApiKey = req.headers["x-groq-api-key"] || bodyApiKey;
+    const apiKey = String(requestApiKey || process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY || "").trim();
     if (!apiKey) {
       res.writeHead(503, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "AI search not configured" }));
@@ -99,7 +100,7 @@ CATEGORIES (use exact spelling):
   "Alcoholic Drinks"         — beer, wine, spirits, whisky, vodka, gin, rum, cognac, champagne
   "Cosmetics & Personal Care"— soap, shampoo, lotion, cream, perfume, deodorant, makeup, skincare, hair, beauty, toothpaste
   "General"                  — rice, couscous, flour, sugar, grains, pasta, cereal, oil, cooking oil, staples, bread
-  "Food Products"            — meat, sausage, beef, chicken, corned beef, ketchup, mayo, sauce, condiments, canned food, snacks
+  "Food Products"            — meat, sausage, beef, chicken, corned beef, ketchup, mayo, sauce, condiments, canned food, snacks, lunch, dinner, meal, food, rice, bread
   "Kitchenware & Electronics"— pots, pans, iron, kettle, appliances, cookware, kitchen equipment, cups, coffee pot
   "Cleaning & Sanitary"      — detergent, bleach, toilet paper, cleaning, disinfectant, mop, sanitizer, laundry
   "Baby Products"            — baby, diapers, wipes, lactogen, infant, formula, baby food
@@ -130,6 +131,8 @@ EXAMPLES:
   "cooking pots"                  → {"searchTerm":"pots cookware","category":"Kitchenware & Electronics"}
   "rice under 10000"              → {"searchTerm":"rice under 10000","category":"General"}
   "snacks for kids"               → {"searchTerm":"biscuits crisps snacks","category":"Food Products"}
+  "lunch ingredients"             → {"searchTerm":"rice chicken bread","category":"Food Products"}
+  "dinner for two"                → {"searchTerm":"rice chicken meat","category":"Food Products"}
   "milk"                          → {"searchTerm":"milk","category":"all"}
   "pet food"                      → {"searchTerm":"pet food","category":"Pet Care"}`,
           },
