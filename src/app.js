@@ -13,6 +13,8 @@ import { loadCatalog } from "./data.js";
 import { t } from "./i18n.js";
 import {
   addToCart,
+  createCareUser,
+  deleteCareUser,
   clearAdminFeedback,
   clearAuthFeedback,
   clearCart,
@@ -44,6 +46,7 @@ import {
   sendSupportReply,
   sendSupportMessage,
   setAdminTab,
+  setCareTab,
   setFilter,
   setGroqKey,
   setAuthFeedback,
@@ -62,7 +65,7 @@ import {
   updateQuantity,
 } from "./store.js";
 import { DEFAULT_MIN_STOCK, EXPIRY_ALERT_DAYS, VAT_RATE } from "./constants.js";
-import { applyFilters, formatPrice, getActivePromotion, getCategories, getEffectivePrice, route, searchProducts, summarizeCart } from "./utils.js";
+import { applyFilters, formatBranchAvailability, formatBranchAvailabilityDetailed, formatPrice, getActivePromotion, getCategories, getEffectivePrice, route, searchProducts, summarizeCart } from "./utils.js";
 import { translateCategory } from "./i18n.js";
 
 const BRAND_LOGO = "./assets/simba-logo.jpg";
@@ -242,7 +245,7 @@ let nearestBranchState = null;    // branch object
 let locationStatusState = "";     // ""|"locating"|"denied"|"error"
 let branchMapInitialized = false;
 let discoverPanelHidden = false;
-let adminOpenCustomerEmail = ""; // tracks which customer chat is open in admin
+let careOpenCustomerEmail = ""; // tracks which customer chat is open in care dashboard
 let navOpen = false;
 let assistantOpen = false;
 let assistantInputState = "";
@@ -414,6 +417,8 @@ function render() {
     view = renderAdminView(state, filteredProducts, tr);
   } else if (currentRoute.name === "branch") {
     view = renderBranchOpsView(state, tr);
+  } else if (currentRoute.name === "care") {
+    view = renderCustomerCareView(state, tr);
   } else {
     view = renderHomeView(state, categories, filteredProducts, cartSummary, tr);
   }
@@ -455,8 +460,12 @@ function render() {
 function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
   const authMode = currentRoute.name === "auth";
   const isDark = state.theme === "dark";
-  const isAdmin = state.isAuthenticated && ["admin", "manager", "staff"].includes(state.currentUser?.role);
-  const isCustomer = state.isAuthenticated && state.currentUser?.role === "customer";
+  const role = state.currentUser?.role;
+  const isAdmin = state.isAuthenticated && role === "admin";
+  const isCare = state.isAuthenticated && role === "customer_care";
+  const isBranchStaff = state.isAuthenticated && ["manager", "staff"].includes(role);
+  const isStaffPortal = isAdmin || isCare || isBranchStaff;
+  const isCustomer = state.isAuthenticated && role === "customer";
   const topbarNotifications = isCustomer ? getCustomerNotifications(state, tr) : [];
   const topbarNotificationCount = isCustomer ? getUnreadCustomerNotificationCount(state) : 0;
   const activeLanguage = state.language.toUpperCase();
@@ -477,15 +486,14 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
         <nav class="main-nav ${navOpen ? "main-nav--open" : ""}" id="main-nav" aria-label="Primary">
           <a class="main-nav__link" href="#/" data-home-link="true">${tr("navHome")}</a>
           ${
-            isAdmin && state.currentUser?.role === "admin"
+            isAdmin
               ? [
                   { id: "overview", key: "adminTabOverview" },
                   { id: "products", key: "adminTabProducts" },
                   { id: "suppliers", key: "adminTabSuppliers" },
                   { id: "promotions", key: "adminTabPromotions" },
                   { id: "reports", key: "adminTabReports" },
-                  { id: "customers", key: "adminTabCustomers" },
-                  { id: "orders", key: "adminTabOrders" },
+                  { id: "users", key: "adminTabUsers" },
                 ]
                   .map(
                     (entry) => `
@@ -495,10 +503,22 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
                     `,
                   )
                   .join("")
-              : isAdmin
-                ? (state.currentUser?.role === "admin"
-                    ? `<a class="main-nav__link" href="#/admin">${tr("adminDashboard")}</a>`
-                    : `<a class="main-nav__link" href="#/branch">${BRANCH_OPS_LABELS[state.language]?.nav || BRANCH_OPS_LABELS.en.nav}</a>`)
+              : isCare
+                ? [
+                    { id: "messages", key: "careTabMessages" },
+                    { id: "orders", key: "careTabOrders" },
+                    { id: "requests", key: "careTabRequests" },
+                  ]
+                    .map(
+                      (entry) => `
+                        <a class="main-nav__link ${state.careTab === entry.id ? "main-nav__link--active" : ""}"
+                           href="#/care"
+                           data-care-tab="${entry.id}">${tr(entry.key)}</a>
+                      `,
+                    )
+                    .join("")
+              : isBranchStaff
+                ? `<a class="main-nav__link" href="#/branch">${BRANCH_OPS_LABELS[state.language]?.nav || BRANCH_OPS_LABELS.en.nav}</a>`
                 : `
                   <a class="main-nav__link" href="#branches">${tr("navBranches")}</a>
                   <a class="main-nav__link" href="#support">${tr("navSupport")}</a>
@@ -509,7 +529,7 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
         </nav>
         <div class="topbar__actions">
           <div class="topbar__utility">
-            ${!isAdmin ? `
+            ${!isStaffPortal ? `
             <a class="cart-icon-btn wishlist-icon-btn" href="#wishlist" aria-label="${getWishlistLabels(state.language).topbar}" title="${getWishlistLabels(state.language).topbar}">
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21s-7.5-4.6-9.7-9.1C.7 8.2 2.6 4.5 6.1 4.1c2-.2 3.8.8 5 2.4 1.2-1.6 3-2.6 5-2.4 3.5.4 5.4 4.1 3.7 7.8C19.5 16.4 12 21 12 21z"/></svg>
               ${(state.wishlist || []).length > 0 ? `<span class="notification-count">${(state.wishlist || []).length}</span>` : ""}
@@ -598,7 +618,7 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
         </div>
       </div>
       ${
-        authMode
+        authMode || isStaffPortal
           ? ""
           : `<div class="discover-panel">
               <div class="discover-row">
@@ -1197,6 +1217,8 @@ function renderProductCard(product, tr) {
   const effective = promo
     ? Math.max(0, Math.round(Number(product.price) * (1 - Number(promo.percent) / 100)))
     : Number(product.price);
+  const showBranchStock = Boolean(String(state.search || "").trim());
+  const branchLine = showBranchStock ? formatBranchAvailability(product, SIMBA_BRANCHES, 3) : "";
   return `
     <article class="product-card">
       <div class="product-card__media">
@@ -1217,6 +1239,11 @@ function renderProductCard(product, tr) {
             <strong class="product-card__price">${formatPrice(effective)}</strong>
           </span>
         </div>
+        ${
+          branchLine
+            ? `<p class="product-card__branches muted"><span class="product-card__branches-label">${tr("branchAvailability")}:</span> ${escapeHtml(branchLine)}</p>`
+            : ""
+        }
         <div class="product-card__actions">
           <a class="button button--ghost button--sm" href="#/product/${product.id}">${tr("details")}</a>
           ${state.isAuthenticated ? `<button class="button button--primary button--sm add-to-cart" data-product-id="${product.id}">${tr("addToCart")}</button>` : `<a class="button button--primary button--sm" href="#/auth/signin">${tr("navSignIn")}</a>`}
@@ -1257,6 +1284,25 @@ function renderProductView(state, productId, cartSummary, tr) {
             <span class="muted">ID ${product.id}</span>
             <span class="muted">${cartSummary.count} ${tr("cartCount")}</span>
           </div>
+          ${
+            product.inStock
+              ? `<div class="branch-availability">
+                  <h3 class="branch-availability__title">${tr("branchAvailability")}</h3>
+                  <ul class="branch-availability__list">
+                    ${formatBranchAvailabilityDetailed(product, SIMBA_BRANCHES)
+                      .map(
+                        (entry) => `
+                          <li class="branch-availability__item">
+                            <strong>${escapeHtml(entry.name)}</strong>
+                            <span class="muted">${entry.stock} ${tr("inStockLeft")} · ${escapeHtml(entry.address)}</span>
+                          </li>
+                        `,
+                      )
+                      .join("")}
+                  </ul>
+                </div>`
+              : `<p class="muted">${tr("outOfStock")}</p>`
+          }
           <div class="detail-actions">
             ${state.isAuthenticated ? `<button class="button button--primary add-to-cart" data-product-id="${product.id}">${tr("addToCart")}</button>` : `<a class="button button--primary" href="#/auth/signin">${tr("navSignIn")}</a>`}
             ${state.isAuthenticated ? `<button class="button button--accent" id="buy-now" data-product-id="${product.id}">${tr("goCheckout")}</button>` : ""}
@@ -1451,7 +1497,7 @@ function renderCheckoutView(state, cartSummary, tr) {
 }
 
 function renderAssistantWidget(state, tr, currentRoute) {
-  if (currentRoute.name === "admin") return "";
+  if (currentRoute.name === "admin" || currentRoute.name === "care") return "";
 
   const isLoggedIn = state.isAuthenticated && state.currentUser?.role === "customer";
   const messages = isLoggedIn && Array.isArray(state.assistantMessages) ? state.assistantMessages : [];
@@ -1916,6 +1962,9 @@ function buildAssistantStoreInfoReply(state, rawQuery) {
     return {
       text: labels.categoriesInfo(categories.length, formatAssistantCategories(language, categories)),
       products: [],
+      cartAction: null,
+      cartProductId: null,
+      cartQuantity: 0,
     };
   }
 
@@ -1924,76 +1973,278 @@ function buildAssistantStoreInfoReply(state, rawQuery) {
     return {
       text: labels.productCountInfo(products.length, inStockCount, categories.length),
       products: [],
+      cartAction: null,
+      cartProductId: null,
+      cartQuantity: 0,
     };
   }
 
   return null;
 }
 
-function parseAssistantCartCommand(rawQuery, products) {
+function parseAssistantCartAction(rawQuery, products, cart = []) {
   const original = String(rawQuery || "").trim();
   const query = normalizeAssistantToken(original);
   if (!query) return null;
 
-  const asksHow =
-    /\b(how|can|could|help|explain|where|what)\b/.test(query) &&
-    /\b(add|cart|basket)\b/.test(query);
-  const hasCartTarget = /\b(cart|basket|bag)\b/.test(query);
-  const hasAddVerb = /\b(add|put|place|drop|send)\b/.test(query);
-  if (asksHow || !hasAddVerb || !hasCartTarget) return null;
+  const asksCartContents =
+    (/\b(cart|basket|bag)\b/.test(query) &&
+      /\b(what|show|list|tell|contents|items|have|got|in|my)\b/.test(query)) ||
+    /\bwhat(?:'s| is)?\s+(?:in\s+)?(?:my\s+)?(?:cart|basket|bag)\b/.test(query) ||
+    /\bshow\s+(?:me\s+)?(?:my\s+)?(?:cart|basket|bag)\b/.test(query);
 
-  const quantityMatch =
-    query.match(/\b(?:add|put|place|drop|send)\s+(\d{1,2})\b/) ||
-    query.match(/\b(\d{1,2})\s+(?:of|x)?\b/);
-  const quantity = quantityMatch
-    ? Math.min(20, Math.max(1, Number(quantityMatch[1]) || 1))
-    : 1;
-
-  const productQuery = query
-    .replace(/\b(?:please|kindly|can you|could you|i want|i need|for me)\b/g, " ")
-    .replace(/\b(?:add|put|place|drop|send|to|into|in|my|the|cart|basket|bag)\b/g, " ")
-    .replace(/\b\d{1,2}\b/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (productQuery.length < 2) return null;
-
-  const match = searchProducts(products || [], productQuery, { stock: "in" })
-    .filter((entry) => entry.score > 0)
-    .map((entry) => entry.product)[0];
-
-  if (!match) {
-    return { product: null, quantity, productQuery };
+  if (asksCartContents) {
+    return { action: "view" };
   }
 
-  return { product: match, quantity, productQuery };
+  const hasRemoveVerb = /\b(remove|delete|take out|takeout|drop)\b/.test(query);
+  const hasUpdateVerb = /\b(change|update|set|modify|adjust)\b/.test(query);
+  const hasAddVerb = /\b(add|put|place|drop|send)\b/.test(query);
+  const hasCartTarget = /\b(cart|basket|bag|from|to|quantity|amount|of)\b/.test(query);
+  const hasQuantityKeyword = /\b(quantity|amount|to)\b/.test(query);
+
+  // Handle update operations (e.g., "change milk to 5", "update bread quantity to 3")
+  if (hasUpdateVerb && (hasQuantityKeyword || hasCartTarget)) {
+    const quantityMatch =
+      query.match(/\b(?:to|set|at)\s+(\d{1,2})\b/) ||
+      query.match(/\b(\d{1,2})\s+(?:pieces|pcs|units|count)\b/);
+    const newQuantity = quantityMatch
+      ? Math.min(20, Math.max(1, Number(quantityMatch[1]) || 1))
+      : null;
+
+    if (newQuantity === null) {
+      // No specific quantity mentioned
+      return null;
+    }
+
+    const productQuery = query
+      .replace(/\b(?:please|kindly|can you|could you|i want|i need|for me)\b/g, " ")
+      .replace(/\b(?:change|update|set|modify|adjust|quantity|amount|of|to|at|my|the|cart|basket|bag)\b/g, " ")
+      .replace(/\b\d{1,2}\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (productQuery.length < 2) {
+      return null;
+    }
+
+    const cartProductIds = (cart || []).map((item) => Number(item.productId));
+    const cartProducts = (products || []).filter((product) => cartProductIds.includes(Number(product.id)));
+    const match =
+      productQuery.length >= 2
+        ? searchProducts(cartProducts, productQuery, { stock: "all" })
+            .filter((entry) => entry.score > 0)
+            .map((entry) => entry.product)[0]
+        : null;
+
+    return { action: "update", product: match || null, quantity: newQuantity, productQuery };
+  }
+
+  // Handle remove operations
+  if (hasRemoveVerb && (hasCartTarget || query.length > 8)) {
+    const productQuery = query
+      .replace(/\b(?:please|kindly|can you|could you|i want|i need|for me)\b/g, " ")
+      .replace(/\b(?:remove|delete|take out|takeout|drop|from|my|the|cart|basket|bag)\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const cartProductIds = (cart || []).map((item) => Number(item.productId));
+    const cartProducts = (products || []).filter((product) => cartProductIds.includes(Number(product.id)));
+    const pool = cartProducts.length ? cartProducts : products || [];
+    const match =
+      productQuery.length >= 2
+        ? searchProducts(pool, productQuery, { stock: "all" })
+            .filter((entry) => entry.score > 0)
+            .map((entry) => entry.product)[0]
+        : null;
+
+    return { action: "remove", product: match || null, productQuery };
+  }
+
+  // Handle add operations - improved logic
+  if (hasAddVerb && hasCartTarget) {
+    const quantityMatch =
+      query.match(/\b(?:add|put|place|drop|send)\s+(\d{1,2})\b/) ||
+      query.match(/\b(\d{1,2})\s+(?:of|x)?\b/);
+    const quantity = quantityMatch
+      ? Math.min(20, Math.max(1, Number(quantityMatch[1]) || 1))
+      : 1;
+
+    // Extract product query more carefully
+    const productQuery = query
+      .replace(/\b(?:please|kindly|can you|could you|i want|i need|for me|can u|couldya|coulda)\b/g, " ")
+      .replace(/\b(?:add|put|place|drop|send|to|into|in|on|my|the|a|an|cart|basket|bag|something)\b/g, " ")
+      .replace(/\b\d{1,2}\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    // If user said "something" or no specific product, look for matches or ask for clarification
+    if (productQuery.length < 2) {
+      // User wants to add but didn't specify what - return with null product to trigger clarification
+      return { action: "add", product: null, quantity, productQuery: "something" };
+    }
+
+    const match = searchProducts(products || [], productQuery, { stock: "in" })
+      .filter((entry) => entry.score > 0)
+      .map((entry) => entry.product)[0];
+
+    return { action: "add", product: match || null, quantity, productQuery };
+  }
+
+  return null;
 }
 
 function buildAssistantCartReply(state, command, tr) {
-  if (!command?.product) {
-    const categories = getCategories(state.products || []);
+  const language = state.language || "en";
+  const cartSummary = summarizeCart(state.products || [], state.cart || [], state.promotions || []);
+
+  if (command?.action === "view") {
+    if (!cartSummary.items.length) {
+      const text =
+        language === "fr"
+          ? "Votre panier est vide pour le moment."
+          : language === "rw"
+          ? "Igitebo cyawe kirimo ubusa."
+          : "Your cart is empty right now.";
+      return { text, products: [], cartAction: null, cartProductId: null, cartQuantity: 0 };
+    }
+
+    const lines = cartSummary.items.map(
+      (item) => `${item.quantity} x ${item.product.name} — ${formatPrice(item.lineTotal)}`,
+    );
+    const text =
+      language === "fr"
+        ? `Voici votre panier (${cartSummary.count} articles, total ${formatPrice(cartSummary.subtotal)}):\n${lines.join("\n")}`
+        : language === "rw"
+        ? `Igitebo cyawe (${cartSummary.count} ibintu, ${formatPrice(cartSummary.subtotal)}):\n${lines.join("\n")}`
+        : `Here is your cart (${cartSummary.count} items, ${formatPrice(cartSummary.subtotal)} subtotal):\n${lines.join("\n")}`;
+
     return {
-      text: `${tr("assistantNoMatch")} ${formatAssistantCategories(state.language || "en", categories.slice(0, 4))}.`,
-      products: [],
+      text,
+      products: cartSummary.items.map((item) => item.product),
+      cartAction: null,
       cartProductId: null,
       cartQuantity: 0,
     };
   }
 
-  const product = command.product;
-  const quantity = command.quantity || 1;
-  const language = state.language || "en";
-  const text = language === "fr"
-    ? `${quantity} x ${product.name} a ete ajoute au panier.`
-    : language === "rw"
-    ? `${quantity} x ${product.name} cyashyizwe mu gatebo.`
-    : `${quantity} x ${product.name} has been added to your cart.`;
+  if (command?.action === "update") {
+    if (!command?.product) {
+      const cartItems = cartSummary.items.map((item) => item.product.name).join(", ");
+      const text =
+        language === "fr"
+          ? `Je n'ai pas trouve le produit. Voici vos articles: ${cartItems || "aucun"}.`
+          : language === "rw"
+          ? `Ntabishyize igicuruzwa. Hano hari ibicuruzwa byawe: ${cartItems || "nta kimwe"}.`
+          : `Couldn't find that product. Your cart items: ${cartItems || "none"}.`;
+      return { text, products: [], cartAction: null, cartProductId: null, cartQuantity: 0 };
+    }
 
+    const product = command.product;
+    const newQuantity = command.quantity || 1;
+    const text =
+      language === "fr"
+        ? `Quantite de ${product.name} mise a jour a ${newQuantity}.`
+        : language === "rw"
+        ? `Ubwambi bwa ${product.name} byakoseshe kuri ${newQuantity}.`
+        : `${product.name} quantity updated to ${newQuantity}.`;
+
+    return {
+      text,
+      products: [product],
+      cartAction: "update",
+      cartProductId: Number(product.id),
+      cartQuantity: newQuantity,
+    };
+  }
+
+  if (command?.action === "remove") {
+    if (!command?.product) {
+      return {
+        text: `${tr("assistantNoMatch")} ${tr("assistantCartRemoveHint")}`,
+        products: [],
+        cartAction: null,
+        cartProductId: null,
+        cartQuantity: 0,
+      };
+    }
+
+    const product = command.product;
+    const inCart = (state.cart || []).some((item) => Number(item.productId) === Number(product.id));
+    if (!inCart) {
+      const text =
+        language === "fr"
+          ? `${product.name} n'est pas dans votre panier.`
+          : language === "rw"
+          ? `${product.name} ntibiri mu gatebo kawe.`
+          : `${product.name} is not in your cart.`;
+      return { text, products: [product], cartAction: null, cartProductId: null, cartQuantity: 0 };
+    }
+
+    const text =
+      language === "fr"
+        ? `${product.name} a ete retire du panier.`
+        : language === "rw"
+        ? `${product.name} cyakuwe mu gatebo.`
+        : `${product.name} has been removed from your cart.`;
+
+    return {
+      text,
+      products: [product],
+      cartAction: "remove",
+      cartProductId: Number(product.id),
+      cartQuantity: 0,
+    };
+  }
+
+  // Handle add action - both with specific product and generic "something"
+  if (command?.action === "add") {
+    if (!command?.product) {
+      // User said "add something" but no specific product was matched
+      const categories = getCategories(state.products || []);
+      const categoriesText = formatAssistantCategories(state.language || "en", categories.slice(0, 4));
+      const text =
+        language === "fr"
+          ? `Je n'ai pas identifie le produit. Vous pouvez chercher dans ces categories: ${categoriesText}.`
+          : language === "rw"
+          ? `Ntabishyize igikorwa. Munogereza muri ibi byiciro: ${categoriesText}.`
+          : `I couldn't identify which product. Try searching in these categories: ${categoriesText}.`;
+      
+      return {
+        text,
+        products: state.products?.slice(0, 3) || [],
+        cartAction: null,
+        cartProductId: null,
+        cartQuantity: 0,
+      };
+    }
+
+    const product = command.product;
+    const quantity = command.quantity || 1;
+    const text =
+      language === "fr"
+        ? `${quantity} x ${product.name} a ete ajoute au panier.`
+        : language === "rw"
+        ? `${quantity} x ${product.name} cyashyizwe mu gatebo.`
+        : `${quantity} x ${product.name} has been added to your cart.`;
+
+    return {
+      text,
+      products: [product],
+      cartAction: "add",
+      cartProductId: Number(product.id),
+      cartQuantity: quantity,
+    };
+  }
+
+  // Default - shouldn't reach here but just in case
+  const categories = getCategories(state.products || []);
   return {
-    text,
-    products: [product],
-    cartProductId: Number(product.id),
-    cartQuantity: quantity,
+    text: `${tr("assistantNoMatch")} ${formatAssistantCategories(state.language || "en", categories.slice(0, 4))}.`,
+    products: [],
+    cartAction: null,
+    cartProductId: null,
+    cartQuantity: 0,
   };
 }
 
@@ -2003,14 +2254,19 @@ async function buildAssistantReply(state, rawQuery, tr) {
   const storeInfoReply = buildAssistantStoreInfoReply(state, rawQuery);
   if (storeInfoReply) return storeInfoReply;
 
-  const cartCommand = parseAssistantCartCommand(rawQuery, state.products);
+  const cartCommand = parseAssistantCartAction(rawQuery, state.products, state.cart);
   if (cartCommand) return buildAssistantCartReply(state, cartCommand, tr);
 
   const groqKey = localStorage.getItem("simba.groq-api-key") || "";
   const matches = getAssistantProductMatches(state.products, rawQuery);
-  const catalogLines = matches.visible.map((product) =>
-    `- ${product.name} | ${product.category} | ${product.price} RWF | ${product.inStock ? "in stock" : "out of stock"}`
+  const cartSummary = summarizeCart(state.products || [], state.cart || [], state.promotions || []);
+  const cartLines = cartSummary.items.map(
+    (item) => `${item.quantity} x ${item.product.name} (${formatPrice(item.lineTotal)})`,
   );
+  const catalogLines = matches.visible.map((product) => {
+    const branches = formatBranchAvailability(product, SIMBA_BRANCHES, 2);
+    return `- ${product.name} | ${product.category} | ${product.price} RWF | ${product.inStock ? "in stock" : "out of stock"}${branches ? ` | branches: ${branches}` : ""}`;
+  });
 
   if (!groqKey) {
     return buildSmartLocalAssistantReply(state, rawQuery, tr, matches);
@@ -2019,11 +2275,15 @@ async function buildAssistantReply(state, rawQuery, tr) {
   const systemPrompt = `You are a helpful assistant for Simba Supermarket in Kigali, Rwanda.
 Respond ONLY in ${langName}.
 
-You can help with two things:
-1. Product search: only recommend products from the FILTERED CATALOG below. The catalog was already filtered by the app for the user's product, price, budget, and stock conditions. Never invent products or add products not shown.
-2. Simba help: explain sign in, cart, checkout, MoMo deposit, branch pickup, support, and account flows.
+You can help with three things:
+1. Product search: only recommend products from the FILTERED CATALOG below. The catalog was already filtered by the app for the user's product, price, budget, and stock conditions. Never invent products or add products not shown. When mentioning availability, include branch names from the catalog lines.
+2. Cart actions: users may ask to add/remove items or view cart contents. You cannot modify the cart directly — tell them to say "add X to cart", "remove X from cart", or "what is in my cart".
+3. Simba help: explain sign in, cart, checkout, MoMo deposit, branch pickup, support, and account flows.
 
-Keep replies short. For products, list every product from FILTERED CATALOG when there are ${ASSISTANT_SMALL_RESULT_LIMIT} or fewer. ${matches.hiddenCount ? `If there are more, list the shown products and say ${matches.hiddenCount} more match.` : "Do not say there are more products when FILTERED CATALOG is complete."} Include prices when the user mentions budget or price.
+CURRENT CART:
+${cartLines.length ? cartLines.join("\n") : "Empty"}
+
+Keep replies short. ${matches.hiddenCount ? `If there are more, list the shown products and say ${matches.hiddenCount} more match.` : "Do not say there are more products when FILTERED CATALOG is complete."} Include prices when the user mentions budget or price.
 
 Simba info:
 - Sign in or create an account to shop.
@@ -2057,7 +2317,7 @@ ${catalogLines.length ? `FILTERED CATALOG:\n${catalogLines.join("\n")}` : "FILTE
     const text = data.choices?.[0]?.message?.content?.trim();
     if (!text) throw new Error("empty");
 
-    return { text, products: matches.visible };
+    return { text, products: matches.visible, cartAction: null, cartProductId: null, cartQuantity: 0 };
   } catch (err) {
     console.error("Groq assistant error:", err.message);
     return buildSmartLocalAssistantReply(state, rawQuery, tr, matches);
@@ -2070,13 +2330,22 @@ function buildSmartLocalAssistantReply(state, rawQuery, tr, precomputedMatches =
 
   if (!matches.visible.length) {
     const helpReply = buildLocalAssistantHelpReply(rawQuery, state.language || "en");
-    if (helpReply) return { text: helpReply, products: [] };
-    return { text: `${tr("assistantNoMatch")} ${formatAssistantCategories(state.language || "en", categories.slice(0, 4))}.`, products: [] };
+    if (helpReply) return { text: helpReply, products: [], cartAction: null, cartProductId: null, cartQuantity: 0 };
+    return { 
+      text: `${tr("assistantNoMatch")} ${formatAssistantCategories(state.language || "en", categories.slice(0, 4))}.`, 
+      products: [],
+      cartAction: null,
+      cartProductId: null,
+      cartQuantity: 0,
+    };
   }
 
   return {
     text: buildDeterministicAssistantProductText(matches, tr, state.language || "en"),
     products: matches.visible,
+    cartAction: null,
+    cartProductId: null,
+    cartQuantity: 0,
   };
 }
 
@@ -2145,7 +2414,7 @@ ${scored.length > 0 ? `PRODUCT CATALOG (pre-filtered):\n${scored.join("\n")}` : 
       text.toLowerCase().includes(p.name.toLowerCase().slice(0, 12))
     ).slice(0, 4);
 
-    return { text, products: mentioned.length ? mentioned : (scored.length > 0 ? scoredProducts.slice(0, 3) : []) };
+    return { text, products: mentioned.length ? mentioned : (scored.length > 0 ? scoredProducts.slice(0, 3) : []), cartAction: null, cartProductId: null, cartQuantity: 0 };
   } catch (err) {
     console.error("Groq assistant error:", err.message);
     return buildLocalAssistantReply(state, rawQuery, tr);
@@ -2164,10 +2433,10 @@ function buildLocalAssistantReply(state, rawQuery, tr) {
     .map((e) => e.p);
 
   if (!scored.length) {
-    return { text: `${tr("assistantNoMatch")} ${formatAssistantCategories(state.language || "en", categories.slice(0, 4))}.`, products: [] };
+    return { text: `${tr("assistantNoMatch")} ${formatAssistantCategories(state.language || "en", categories.slice(0, 4))}.`, products: [], cartAction: null, cartProductId: null, cartQuantity: 0 };
   }
   const intro = tr("assistantDirectReply");
-  return { text: `${intro} ${scored.map((p) => p.name).slice(0, 3).join(", ")}.`, products: scored };
+  return { text: `${intro} ${scored.map((p) => p.name).slice(0, 3).join(", ")}.`, products: scored, cartAction: null, cartProductId: null, cartQuantity: 0 };
 }
 
 function renderAccountView(state, cartSummary, tr) {
@@ -2579,8 +2848,7 @@ function renderAdminView(state, filteredProducts, tr) {
     ? `<p class="auth-feedback auth-feedback--${state.adminFeedback.type}">${tr(`admin_${state.adminFeedback.code}`)}</p>`
     : "";
   const visibleProducts = filteredProducts.slice(0, 24);
-  const customers = state.users.filter((user) => user.role === "customer");
-  const recentOrders = state.orders.slice(0, 8);
+  const careUsers = state.users.filter((user) => user.role === "customer_care");
   const adminNotifications = getAdminNotifications(state, tr);
 
   let tabContent = "";
@@ -2597,14 +2865,11 @@ function renderAdminView(state, filteredProducts, tr) {
     case "reports":
       tabContent = renderAdminReportsTab(state, tr);
       break;
-    case "customers":
-      tabContent = renderAdminCustomersTab(state, customers, tr);
-      break;
-    case "orders":
-      tabContent = renderAdminOrdersTab(state, recentOrders, tr);
+    case "users":
+      tabContent = renderAdminUsersTab(state, careUsers, tr);
       break;
     default:
-      tabContent = renderAdminOverviewTab(state, customers, adminNotifications, tr);
+      tabContent = renderAdminOverviewTab(state, careUsers, adminNotifications, tr);
   }
 
   return `
@@ -2624,11 +2889,15 @@ function renderAdminView(state, filteredProducts, tr) {
   `;
 }
 
-function renderAdminOverviewTab(state, customers, adminNotifications, tr) {
+function renderAdminOverviewTab(state, careUsers, adminNotifications, tr) {
   const totalRevenue = (state.orders || []).reduce((sum, o) => sum + Number(o.totals?.total || 0), 0);
   const todayKey = new Date().toISOString().slice(0, 10);
   const todaysOrders = (state.orders || []).filter((o) => String(o.createdAt || "").slice(0, 10) === todayKey);
   const todaysRevenue = todaysOrders.reduce((sum, o) => sum + Number(o.totals?.total || 0), 0);
+  const customers = state.users.filter((user) => user.role === "customer");
+  const openRequests = (state.messages || []).filter(
+    (message) => !Array.isArray(message.replies) || message.replies.length === 0,
+  ).length;
   const lowStock = (state.products || []).filter((p) => {
     const min = Number(p.minStock) || DEFAULT_MIN_STOCK;
     const stock = Object.values(p.branchStock || {}).reduce((a, b) => a + Number(b || 0), 0);
@@ -2666,16 +2935,14 @@ function renderAdminOverviewTab(state, customers, adminNotifications, tr) {
     </article>
     <div class="admin-grid">
       <article class="summary-card">
-        <h3>${tr("adminTabCustomers")}</h3>
-        ${
-          adminNotifications.customerMessages.length
-            ? `<div class="admin-notification-list">${adminNotifications.customerMessages.slice(0, 5).map((entry) => `
-                <button class="admin-notification-item" type="button" data-admin-tab="customers">
-                  <strong>${escapeHtml(entry.title)}</strong>
-                  <span>${escapeHtml(entry.text)}</span>
-                </button>`).join("")}</div>`
-            : `<p class="muted">${tr("adminNoNewCustomerMessages")}</p>`
-        }
+        <h3>${tr("careDashboard")}</h3>
+        <p class="muted">${tr("adminCareTeamHint")}</p>
+        <div class="feature-grid" style="margin-top:0.75rem">
+          <article class="feature-card"><h3>${tr("careTabMessages")}</h3><p>${(state.messages || []).length}</p></article>
+          <article class="feature-card"><h3>${tr("careTabRequests")}</h3><p>${openRequests}</p></article>
+          <article class="feature-card"><h3>${tr("careAgentsCount")}</h3><p>${careUsers.length}</p></article>
+        </div>
+        <a class="button button--ghost" href="#/admin" data-admin-tab="users" style="margin-top:0.75rem">${tr("adminManageCareUsers")}</a>
       </article>
       <article class="summary-card">
         <h3>${tr("adminTabProducts")}</h3>
@@ -2923,25 +3190,44 @@ function renderAdminReportsTab(state, tr) {
   `;
 }
 
-function renderAdminCustomersTab(state, customers, tr) {
+function getCareContactEmails(state) {
+  const contacts = new Map();
+  (state.messages || []).forEach((message) => {
+    const email = String(message.email || "").trim().toLowerCase();
+    if (!email) return;
+    if (contacts.has(email)) return;
+    const user = (state.users || []).find((entry) => entry.email.toLowerCase() === email);
+    contacts.set(email, {
+      email,
+      fullName: user?.fullName || message.fullName || email,
+      isRegistered: Boolean(user),
+    });
+  });
+  return Array.from(contacts.values()).sort((a, b) => a.fullName.localeCompare(b.fullName));
+}
+
+function renderCareMessagesPanel(state, tr) {
+  const contacts = getCareContactEmails(state);
   return `
-    <div class="admin-grid" id="customers-panel">
+    <div class="admin-grid" id="care-messages-panel">
       <article class="summary-card">
-        <h3>${tr("adminManageCustomers")}</h3>
+        <h3>${tr("careManageMessages")}</h3>
+        <p class="muted">${tr("careManageMessagesLead")}</p>
         <div class="admin-activity-list">
           ${
-            customers.length
-              ? customers.map((customer) => {
-                  const isOpen = adminOpenCustomerEmail === customer.email;
-                  const customerMsgs = (state.messages || []).filter(
-                    (m) => String(m.email || "").toLowerCase() === customer.email.toLowerCase()
-                  ).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+            contacts.length
+              ? contacts.map((contact) => {
+                  const isOpen = careOpenCustomerEmail === contact.email;
+                  const customerMsgs = (state.messages || [])
+                    .filter((m) => String(m.email || "").toLowerCase() === contact.email)
+                    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
                   return `
                     <div class="admin-customer-row">
-                      <button class="admin-customer-toggle" type="button" data-customer-email="${escapeHtml(customer.email)}">
+                      <button class="admin-customer-toggle" type="button" data-customer-email="${escapeHtml(contact.email)}">
                         <span>
-                          <strong>${escapeHtml(customer.fullName || "-")}</strong>
-                          <span class="muted">${escapeHtml(customer.email)}</span>
+                          <strong>${escapeHtml(contact.fullName || "-")}</strong>
+                          <span class="muted">${escapeHtml(contact.email)}</span>
+                          ${contact.isRegistered ? `<span class="pill pill--small">${tr("careRegisteredClient")}</span>` : `<span class="pill pill--small">${tr("careGuestClient")}</span>`}
                         </span>
                         <span><span class="pill">${customerMsgs.length}</span></span>
                       </button>
@@ -2949,7 +3235,7 @@ function renderAdminCustomersTab(state, customers, tr) {
                         <div class="admin-customer-chat">
                           <div class="admin-customer-chat__messages">
                             ${customerMsgs.length ? customerMsgs.map((msg) => `
-                              <div class="admin-message-card" id="admin-message-${msg.id}">
+                              <div class="admin-message-card" id="care-message-${msg.id}">
                                 <div class="admin-message-card__head">
                                   <strong>${escapeHtml(msg.fullName)}</strong>
                                   <span class="muted">${new Date(msg.createdAt).toLocaleString()}</span>
@@ -2958,7 +3244,7 @@ function renderAdminCustomersTab(state, customers, tr) {
                                 <div class="admin-replies">
                                   ${(Array.isArray(msg.replies) ? msg.replies : []).map((reply) => `
                                     <div class="admin-reply-item">
-                                      <strong>${reply.by === "Admin" ? tr("authRoleAdmin") : escapeHtml(reply.by)}</strong>
+                                      <strong>${escapeHtml(reply.by)}</strong>
                                       <span class="muted">${new Date(reply.createdAt).toLocaleString()}</span>
                                       <p>${escapeHtml(reply.text)}</p>
                                     </div>
@@ -2981,6 +3267,190 @@ function renderAdminCustomersTab(state, customers, tr) {
               : `<p>${tr("adminNoCustomers")}</p>`
           }
         </div>
+      </article>
+    </div>
+  `;
+}
+
+function renderCareOrdersPanel(state, tr) {
+  const recentOrders = (state.orders || []).slice(0, 20);
+  const hasLocations = recentOrders.some((order) => resolveOrderMapLocation(order));
+  return `
+    <div class="admin-grid">
+      <article class="summary-card">
+        <h3>${tr("careClientOrders")}</h3>
+        <p class="muted">${tr("careClientOrdersLead")}</p>
+        <div class="admin-orders-map-container" style="margin-bottom:1rem">
+          <div id="admin-orders-map" class="branches-map admin-orders-map"></div>
+          ${!recentOrders.length ? `<div class="map-overlay">${tr("adminOrdersMapEmpty")}</div>` : !hasLocations ? `<div class="map-overlay">${tr("adminOrdersMapHint")}</div>` : ""}
+        </div>
+        <div class="admin-activity-list">
+          ${
+            recentOrders.length
+              ? recentOrders.map((order) => {
+                  const loc = resolveOrderMapLocation(order);
+                  return `
+                    <div class="admin-order-card ${loc ? "admin-order-card--has-location" : ""}" ${loc ? `data-order-lat="${loc.lat}" data-order-lng="${loc.lng}"` : ""}>
+                      <div class="admin-order-header">
+                        <div>
+                          <strong>${escapeHtml(order.customer.fullName)}</strong>
+                          <div class="admin-order-meta">${escapeHtml(order.reference)} • ${escapeHtml(order.status || "pending")}</div>
+                        </div>
+                        <strong class="admin-order-total">${formatPrice(order.totals.total)}</strong>
+                      </div>
+                      <div class="admin-order-details">
+                        ${order.pickupBranch ? `<div class="admin-order-branch">📍 ${escapeHtml(order.pickupBranch.name)}</div>` : ""}
+                        ${order.pickupTime ? `<div class="admin-order-location">🕒 ${escapeHtml(order.pickupTime)}</div>` : ""}
+                        ${loc ? `<div class="admin-order-location">🌍 ${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}</div>` : ""}
+                        <div class="admin-order-address">📮 ${escapeHtml(order.customer.address || tr("noAddressProvided"))}</div>
+                        <div class="admin-order-phone">📞 ${escapeHtml(order.customer.phone || tr("noPhoneProvided"))}</div>
+                      </div>
+                    </div>
+                  `;
+                }).join("")
+              : `<div class="empty-orders-state"><p>${tr("noOrdersYet")}</p><p class="muted">${tr("adminOrdersMapHint")}</p></div>`
+          }
+        </div>
+      </article>
+    </div>
+  `;
+}
+
+function renderCareRequestsPanel(state, tr) {
+  const openMessages = (state.messages || [])
+    .filter((message) => !Array.isArray(message.replies) || message.replies.length === 0)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  return `
+    <div class="admin-grid">
+      <article class="summary-card">
+        <h3>${tr("careOpenRequests")}</h3>
+        <p class="muted">${tr("careOpenRequestsLead")}</p>
+        <div class="admin-activity-list">
+          ${
+            openMessages.length
+              ? openMessages.map((msg) => `
+                  <div class="admin-message-card" id="care-request-${msg.id}">
+                    <div class="admin-message-card__head">
+                      <div>
+                        <strong>${escapeHtml(msg.fullName)}</strong>
+                        <div class="muted">${escapeHtml(msg.email)}</div>
+                      </div>
+                      <span class="muted">${new Date(msg.createdAt).toLocaleString()}</span>
+                    </div>
+                    <p>${escapeHtml(msg.message)}</p>
+                    <form class="admin-reply-form" data-message-id="${msg.id}">
+                      <div class="customer-chat-input-row">
+                        <input name="reply" placeholder="${tr("adminReplyPlaceholder")}" required autocomplete="off" />
+                        <button class="button button--accent" type="submit">${tr("adminReplySend")}</button>
+                      </div>
+                    </form>
+                  </div>
+                `).join("")
+              : `<p class="muted">${tr("careNoOpenRequests")}</p>`
+          }
+        </div>
+      </article>
+    </div>
+  `;
+}
+
+function renderCustomerCareView(state, tr) {
+  if (!state.isAuthenticated || state.currentUser?.role !== "customer_care") {
+    return `
+      <main class="auth-layout">
+        <section class="auth-panel">
+          <div class="banner">
+            <h3>${tr("careDashboard")}</h3>
+            <p>${tr("careSigninRequired")}</p>
+            <a class="button button--primary" href="#/auth/signin">${tr("adminLogin")}</a>
+          </div>
+        </section>
+      </main>
+    `;
+  }
+
+  const feedback = state.adminFeedback
+    ? `<p class="auth-feedback auth-feedback--${state.adminFeedback.type}">${tr(`admin_${state.adminFeedback.code}`) || tr(`care_${state.adminFeedback.code}`) || state.adminFeedback.code}</p>`
+    : "";
+
+  let tabContent = "";
+  switch (state.careTab) {
+    case "orders":
+      tabContent = renderCareOrdersPanel(state, tr);
+      break;
+    case "requests":
+      tabContent = renderCareRequestsPanel(state, tr);
+      break;
+    default:
+      tabContent = renderCareMessagesPanel(state, tr);
+  }
+
+  const openRequests = (state.messages || []).filter(
+    (message) => !Array.isArray(message.replies) || message.replies.length === 0,
+  ).length;
+
+  return `
+    <main class="section admin-layout care-layout">
+      <section class="section">
+        <div class="section__header">
+          <div>
+            <h2 class="section__title">${tr("careDashboard")}</h2>
+            <p class="section__lead">${tr("careDashboardLead")}</p>
+          </div>
+          <span class="pill">${escapeHtml(state.currentUser.fullName)}</span>
+        </div>
+        ${feedback}
+        <div class="feature-grid care-stats">
+          <article class="feature-card"><h3>${tr("careTabMessages")}</h3><p>${(state.messages || []).length}</p></article>
+          <article class="feature-card"><h3>${tr("careTabOrders")}</h3><p>${(state.orders || []).length}</p></article>
+          <article class="feature-card ${openRequests ? "feature-card--warn" : ""}"><h3>${tr("careTabRequests")}</h3><p>${openRequests}</p></article>
+        </div>
+        ${tabContent}
+      </section>
+    </main>
+  `;
+}
+
+function renderAdminUsersTab(state, careUsers, tr) {
+  return `
+    <div class="admin-grid">
+      <article class="summary-card">
+        <h3>${tr("adminCreateCareUser")}</h3>
+        <p class="muted">${tr("adminCreateCareUserLead")}</p>
+        <form id="admin-care-user-form" class="auth-form admin-form">
+          <label class="checkout-field"><span>${tr("fullName")}</span><input name="fullName" required /></label>
+          <label class="checkout-field"><span>${tr("authEmail")}</span><input name="email" type="email" required /></label>
+          <label class="checkout-field"><span>${tr("authPassword")}</span><input name="password" type="password" minlength="6" required /></label>
+          <button class="button button--primary" type="submit">${tr("adminCreateCareUserButton")}</button>
+        </form>
+      </article>
+      <article class="summary-card">
+        <h3>${tr("adminManageCareUsers")}</h3>
+        ${
+          careUsers.length
+            ? `
+              <table class="admin-table">
+                <thead><tr><th>${tr("fullName")}</th><th>${tr("authEmail")}</th><th></th></tr></thead>
+                <tbody>
+                  ${careUsers.map((user) => `
+                    <tr>
+                      <td><strong>${escapeHtml(user.fullName)}</strong></td>
+                      <td>${escapeHtml(user.email)}</td>
+                      <td>
+                        ${
+                          user.email !== "care@simba.rw"
+                            ? `<button class="button button--ghost button--sm" type="button" data-care-user-delete="${escapeHtml(user.email)}">${tr("careUserDelete")}</button>`
+                            : `<span class="muted">${tr("careUserProtected")}</span>`
+                        }
+                      </td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            `
+            : `<p class="muted">${tr("careNoAgents")}</p>`
+        }
       </article>
     </div>
   `;
@@ -3187,48 +3657,6 @@ function renderBranchOpsView(state, tr) {
         </article>
       </section>
     </main>
-  `;
-}
-
-function renderAdminOrdersTab(state, recentOrders, tr) {
-  const hasLocations = recentOrders.some((order) => resolveOrderMapLocation(order));
-  return `
-    <div class="admin-grid">
-      <article class="summary-card">
-        <h3>${tr("adminOrdersMap")}</h3>
-        <div class="admin-orders-map-container" style="margin-bottom:1rem">
-          <div id="admin-orders-map" class="branches-map admin-orders-map"></div>
-          ${!recentOrders.length ? `<div class="map-overlay">${tr("adminOrdersMapEmpty")}</div>` : !hasLocations ? `<div class="map-overlay">${tr("adminOrdersMapHint")}</div>` : ""}
-        </div>
-        <div class="admin-activity-list">
-          ${
-            recentOrders.length
-              ? recentOrders.map((order) => {
-                  const loc = resolveOrderMapLocation(order);
-                  return `
-                    <div class="admin-order-card ${loc ? "admin-order-card--has-location" : ""}" ${loc ? `data-order-lat="${loc.lat}" data-order-lng="${loc.lng}"` : ""}>
-                      <div class="admin-order-header">
-                        <div>
-                          <strong>${escapeHtml(order.customer.fullName)}</strong>
-                          <div class="admin-order-meta">${escapeHtml(order.reference)} • ${escapeHtml(order.status || "pending")}</div>
-                        </div>
-                        <strong class="admin-order-total">${formatPrice(order.totals.total)}</strong>
-                      </div>
-                      <div class="admin-order-details">
-                        ${order.pickupBranch ? `<div class="admin-order-branch">📍 ${escapeHtml(order.pickupBranch.name)}</div>` : ""}
-                        ${order.pickupTime ? `<div class="admin-order-location">🕒 ${escapeHtml(order.pickupTime)}</div>` : ""}
-                        ${loc ? `<div class="admin-order-location">🌍 ${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}</div>` : ""}
-                        <div class="admin-order-address">📮 ${escapeHtml(order.customer.address || tr("noAddressProvided"))}</div>
-                        <div class="admin-order-phone">📞 ${escapeHtml(order.customer.phone || tr("noPhoneProvided"))}</div>
-                      </div>
-                    </div>
-                  `;
-                }).join("")
-              : `<div class="empty-orders-state"><p>${tr("noOrdersYet")}</p><p class="muted">${tr("adminOrdersMapHint")}</p></div>`
-          }
-        </div>
-      </article>
-    </div>
   `;
 }
 
@@ -4026,11 +4454,15 @@ function bindEvents(currentRoute) {
       if (role === "customer") seedAssistantConversation();
       const shouldReturnToCheckout = sessionStorage.getItem(CHECKOUT_AFTER_AUTH_KEY) === "1";
       sessionStorage.removeItem(CHECKOUT_AFTER_AUTH_KEY);
-      location.hash = ["admin", "manager", "staff"].includes(role)
-        ? "/admin"
-        : shouldReturnToCheckout
-          ? "/checkout"
-          : "/";
+      location.hash = role === "customer_care"
+        ? "/care"
+        : ["admin", "manager", "staff"].includes(role)
+          ? role === "manager" || role === "staff"
+            ? "/branch"
+            : "/admin"
+          : shouldReturnToCheckout
+            ? "/checkout"
+            : "/";
     }
   });
 
@@ -4165,6 +4597,30 @@ function bindEvents(currentRoute) {
         expiryDate: form.get("expiryDate"),
         minStock: form.get("minStock"),
       });
+    }),
+  );
+
+  document.querySelectorAll("[data-care-tab]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      setCareTab(btn.dataset.careTab);
+      location.hash = "/care";
+    }),
+  );
+
+  document.querySelector("#admin-care-user-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const ok = await createCareUser({
+      fullName: form.get("fullName"),
+      email: form.get("email"),
+      password: form.get("password"),
+    });
+    if (ok) event.currentTarget.reset();
+  });
+
+  document.querySelectorAll("[data-care-user-delete]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      deleteCareUser(btn.dataset.careUserDelete);
     }),
   );
 
@@ -4307,7 +4763,20 @@ function bindEvents(currentRoute) {
 
     const reply = await buildAssistantReply(getState(), message, (key) => t(getState().language, key));
     assistantPending = false;
-    if (reply.cartProductId) {
+    if (reply.cartAction === "add" && reply.cartProductId) {
+      addToCart(Number(reply.cartProductId), Number(reply.cartQuantity) || 1);
+    } else if (reply.cartAction === "remove" && reply.cartProductId) {
+      removeFromCart(Number(reply.cartProductId));
+    } else if (reply.cartAction === "update" && reply.cartProductId) {
+      updateQuantity(Number(reply.cartProductId), 0);
+      // Set to specific quantity (updateQuantity uses delta, so we need to get current and calculate delta)
+      const currentCart = getState().cart || [];
+      const currentItem = currentCart.find((item) => Number(item.productId) === Number(reply.cartProductId));
+      if (currentItem) {
+        const delta = Number(reply.cartQuantity) - Number(currentItem.quantity);
+        updateQuantity(Number(reply.cartProductId), delta);
+      }
+    } else if (reply.cartProductId && !reply.cartAction) {
       addToCart(Number(reply.cartProductId), Number(reply.cartQuantity) || 1);
     }
     setAssistantMessages([
@@ -4328,12 +4797,12 @@ function bindEvents(currentRoute) {
   document.querySelectorAll(".admin-customer-toggle").forEach((btn) =>
     btn.addEventListener("click", () => {
       const email = btn.dataset.customerEmail || "";
-      adminOpenCustomerEmail = adminOpenCustomerEmail === email ? "" : email;
+      careOpenCustomerEmail = careOpenCustomerEmail === email ? "" : email;
       render();
-      if (adminOpenCustomerEmail) {
+      if (careOpenCustomerEmail) {
         loadLeaflet(() => {
           requestAnimationFrame(() => {
-            mountAdminOrdersMap(adminOpenCustomerEmail);
+            mountAdminOrdersMap(careOpenCustomerEmail);
           });
         });
       }
@@ -5309,6 +5778,7 @@ async function handleGoogleAuthCallback() {
 
   const ok = await loginWithGoogle({ idToken, nonce });
   if (ok) {
-    location.hash = "/";
+    const role = getState().currentUser?.role;
+    location.hash = role === "customer_care" ? "/care" : "/";
   }
 }

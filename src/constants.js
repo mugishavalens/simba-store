@@ -19,6 +19,7 @@ export const STORAGE_KEYS = {
   suppliers: "simba.suppliers.v1",
   promotions: "simba.promotions.v1",
   adminTab: "simba.admin-tab.v1",
+  careTab: "simba.care-tab.v1",
   recentlyViewed: "simba.recently-viewed.v1",
   wishlist: "simba.wishlist.v1",
   languageWelcomeSeen: "simba.language-welcome-seen.v1",
@@ -73,6 +74,14 @@ export const DEFAULT_ADMIN = {
   email: "admin@simba.rw",
   role: "admin",
   password: "SimbaAdmin@2026",
+};
+
+export const DEFAULT_CUSTOMER_CARE = {
+  id: 4,
+  fullName: "Simba Customer Care",
+  email: "care@simba.rw",
+  role: "customer_care",
+  password: "SimbaCare@2026",
 };
 
 export const DEMO_BRANCH_USERS = [

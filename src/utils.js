@@ -411,6 +411,30 @@ export function summarizeCart(products, cart, promotions = []) {
   };
 }
 
+export function getProductAvailableBranches(product, branches = []) {
+  if (!product?.branchStock) return [];
+  return branches.filter((branch) => Number(product.branchStock[branch.id] || 0) > 0);
+}
+
+export function formatBranchAvailability(product, branches = [], max = 3) {
+  const available = getProductAvailableBranches(product, branches);
+  if (!available.length) return "";
+  const shortName = (name) => String(name || "").replace(/^Simba Supermarket\s+/i, "");
+  const names = available.slice(0, max).map((branch) => shortName(branch.name));
+  const extra = available.length > max ? ` +${available.length - max}` : "";
+  return `${names.join(", ")}${extra}`;
+}
+
+export function formatBranchAvailabilityDetailed(product, branches = []) {
+  const available = getProductAvailableBranches(product, branches);
+  return available.map((branch) => ({
+    id: branch.id,
+    name: branch.name,
+    stock: Number(product.branchStock?.[branch.id] || 0),
+    address: branch.address || "",
+  }));
+}
+
 export function route() {
   const hash = location.hash.replace(/^#/, "") || "/";
   const [path, id, mode] = hash.split("/").filter(Boolean);
@@ -420,6 +444,7 @@ export function route() {
   if (path === "auth") return { name: "auth", mode: id || "signin" };
   if (path === "account") return { name: "account" };
   if (path === "admin") return { name: "admin" };
+  if (path === "care") return { name: "care" };
   if (path === "clients") return { name: "clients" };
   if (path === "branch") return { name: "branch" };
   return { name: "home" };

@@ -1,5 +1,7 @@
 import {
   createOrder,
+  createCareUser as createCareUserBackend,
+  deleteCareUser as deleteCareUserBackend,
   hydrateSession,
   loginUser,
   loginWithGoogleUser,
@@ -45,6 +47,7 @@ const state = {
   wishlist: readStorage(STORAGE_KEYS.wishlist, []),
   languageWelcomeSeen: readStorage(STORAGE_KEYS.languageWelcomeSeen, false),
   adminTab: readStorage(STORAGE_KEYS.adminTab, "overview"),
+  careTab: readStorage(STORAGE_KEYS.careTab, "messages"),
   customerNotificationFeed: readStorage(STORAGE_KEYS.customerNotificationFeed, []),
   assistantMessages: readStorage(STORAGE_KEYS.assistantMessages, [
     {
@@ -565,11 +568,51 @@ export function clearWishlist() {
 }
 
 export function setAdminTab(tab) {
-  const allowed = ["overview", "products", "suppliers", "promotions", "reports", "customers", "orders"];
+  const allowed = ["overview", "products", "suppliers", "promotions", "reports", "users"];
   if (!allowed.includes(tab)) return;
   state.adminTab = tab;
   persist(STORAGE_KEYS.adminTab, tab);
   emit();
+}
+
+export function setCareTab(tab) {
+  const allowed = ["messages", "orders", "requests"];
+  if (!allowed.includes(tab)) return;
+  state.careTab = tab;
+  persist(STORAGE_KEYS.careTab, tab);
+  emit();
+}
+
+export async function createCareUser(payload) {
+  if (state.currentUser?.role !== "admin") {
+    state.adminFeedback = { type: "error", code: "accessDenied" };
+    emit();
+    return false;
+  }
+
+  const result = await createCareUserBackend(payload);
+  state.adminFeedback = { type: result.ok ? "success" : "error", code: result.code };
+  if (result.ok && Array.isArray(result.users)) {
+    state.users = result.users;
+  }
+  emit();
+  return result.ok;
+}
+
+export async function deleteCareUser(email) {
+  if (state.currentUser?.role !== "admin") {
+    state.adminFeedback = { type: "error", code: "accessDenied" };
+    emit();
+    return false;
+  }
+
+  const result = await deleteCareUserBackend({ email });
+  state.adminFeedback = { type: result.ok ? "success" : "error", code: result.code };
+  if (result.ok && Array.isArray(result.users)) {
+    state.users = result.users;
+  }
+  emit();
+  return result.ok;
 }
 
 export function saveSupplier(payload) {
@@ -746,7 +789,8 @@ export async function sendSupportMessage(payload) {
 }
 
 export async function sendSupportReply(payload) {
-  if (state.currentUser?.role !== "admin") {
+  const role = state.currentUser?.role;
+  if (!["admin", "customer_care"].includes(role)) {
     state.adminFeedback = { type: "error", code: "accessDenied" };
     emit();
     return false;
@@ -755,7 +799,7 @@ export async function sendSupportReply(payload) {
   const result = await replySupportMessage({
     messageId: payload.messageId,
     reply: payload.reply,
-    by: state.currentUser?.fullName || "Simba Team",
+    by: state.currentUser?.fullName || (role === "customer_care" ? "Customer Care" : "Admin"),
   });
   state.adminFeedback = { type: result.ok ? "success" : "error", code: result.code };
   if (result.ok && Array.isArray(result.messages)) {

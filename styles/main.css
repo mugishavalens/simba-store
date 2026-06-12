@@ -5042,3 +5042,60 @@ body[data-theme="dark"] .deal-card {
     justify-content: center;
   }
 }
+
+.product-card__branches {
+  margin: 0.35rem 0 0.15rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.product-card__branches-label {
+  font-weight: 600;
+}
+
+.branch-availability {
+  margin: 1rem 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-strong);
+}
+
+.branch-availability__title {
+  margin: 0 0 0.65rem;
+  font-size: 0.95rem;
+}
+
+.branch-availability__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.branch-availability__item {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.care-layout .care-stats {
+  margin-bottom: 1.25rem;
+}
+
+@media (max-width: 720px) {
+  .care-layout .feature-grid,
+  .care-layout .admin-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-customer-toggle {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+  }
+
+  .product-card__branches {
+    font-size: 0.74rem;
+  }
+}

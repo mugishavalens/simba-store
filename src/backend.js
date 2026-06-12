@@ -1,4 +1,12 @@
-import { DEFAULT_ADMIN, DEMO_BRANCH_USERS, GOOGLE_CLIENT_ID, PICKUP_DEPOSIT_RWF, SIMBA_BRANCHES, STORAGE_KEYS } from "./constants.js";
+import {
+  DEFAULT_ADMIN,
+  DEFAULT_CUSTOMER_CARE,
+  DEMO_BRANCH_USERS,
+  GOOGLE_CLIENT_ID,
+  PICKUP_DEPOSIT_RWF,
+  SIMBA_BRANCHES,
+  STORAGE_KEYS,
+} from "./constants.js";
 
 function resolveGoogleClientId() {
   return String(localStorage.getItem("simba.google-client-id") || GOOGLE_CLIENT_ID || "").trim();
@@ -32,7 +40,7 @@ function publicUser(user) {
 }
 
 function seedUsers(users) {
-  const seeded = [DEFAULT_ADMIN, ...DEMO_BRANCH_USERS].map((user) => ({
+  const seeded = [DEFAULT_ADMIN, DEFAULT_CUSTOMER_CARE, ...DEMO_BRANCH_USERS].map((user) => ({
     ...user,
     email: String(user.email || "").toLowerCase(),
     createdAt: user.createdAt || new Date().toISOString(),
@@ -233,6 +241,7 @@ export async function loginWithGoogleUser(payload = {}) {
   const googleEmail = String(googlePayload.email || "").trim().toLowerCase();
   if (
     googleEmail === DEFAULT_ADMIN.email.toLowerCase() ||
+    googleEmail === DEFAULT_CUSTOMER_CARE.email.toLowerCase() ||
     DEMO_BRANCH_USERS.some((user) => user.email.toLowerCase() === googleEmail)
   ) {
     return { ok: false, code: "googleAdminRestricted" };
@@ -333,6 +342,54 @@ export async function replySupportMessage(payload) {
     messages,
     reply,
   };
+}
+
+export async function createCareUser(payload) {
+  const users = ensureUsers();
+  const email = String(payload.email || "").trim().toLowerCase();
+  const fullName = String(payload.fullName || "").trim();
+  const password = String(payload.password || "");
+
+  if (!email || !fullName || password.length < 6) {
+    return { ok: false, code: "invalidCareUser" };
+  }
+
+  if (users.some((entry) => entry.email === email)) {
+    return { ok: false, code: "exists" };
+  }
+
+  const user = {
+    id: Date.now(),
+    fullName,
+    email,
+    role: "customer_care",
+    password,
+    createdAt: new Date().toISOString(),
+  };
+
+  users.push(user);
+  writeStorage(STORAGE_KEYS.users, users);
+
+  return { ok: true, code: "careUserCreated", users, user: publicUser(user) };
+}
+
+export async function deleteCareUser(payload) {
+  const users = ensureUsers();
+  const email = String(payload.email || "").trim().toLowerCase();
+  const index = users.findIndex((entry) => entry.email === email && entry.role === "customer_care");
+
+  if (index === -1) {
+    return { ok: false, code: "careUserMissing" };
+  }
+
+  if (email === DEFAULT_CUSTOMER_CARE.email.toLowerCase()) {
+    return { ok: false, code: "careUserProtected" };
+  }
+
+  users.splice(index, 1);
+  writeStorage(STORAGE_KEYS.users, users);
+
+  return { ok: true, code: "careUserDeleted", users };
 }
 
 export async function updateUserProfile(payload) {
