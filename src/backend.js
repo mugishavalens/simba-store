@@ -3,6 +3,7 @@ import {
   DEFAULT_CUSTOMER_CARE,
   DEMO_BRANCH_USERS,
   GOOGLE_CLIENT_ID,
+  KIGALI_DELIVERY_ZONES,
   PICKUP_DEPOSIT_RWF,
   SIMBA_BRANCHES,
   STORAGE_KEYS,
@@ -692,6 +693,79 @@ export async function updateBranchInventory(payload) {
   products[index] = nextProduct;
   writeStorage(STORAGE_KEYS.products, products);
   return { ok: true, code: "inventoryUpdated", products, product: nextProduct };
+}
+
+export async function submitProductReview(payload) {
+  const reviews = readStorage(STORAGE_KEYS.productReviews, []);
+  const orders = readStorage(STORAGE_KEYS.orders, []);
+  const customerEmail = String(payload.customerEmail || "").trim().toLowerCase();
+  const productId = Number(payload.productId);
+
+  if (!productId) return { ok: false, code: "productMissing" };
+
+  const rating = Math.min(5, Math.max(1, Number(payload.rating || 0)));
+  if (!rating) return { ok: false, code: "ratingRequired" };
+
+  const hasPurchased = orders.some((order) =>
+    String(order.customer?.email || "").toLowerCase() === customerEmail &&
+    (order.items || []).some((item) => Number(item.productId) === productId)
+  );
+  if (!hasPurchased) return { ok: false, code: "purchaseRequired" };
+
+  const already = reviews.find(
+    (r) => r.productId === productId && r.customerEmail === customerEmail
+  );
+  if (already) {
+    const idx = reviews.indexOf(already);
+    reviews[idx] = { ...already, rating, comment: String(payload.comment || "").trim(), updatedAt: new Date().toISOString() };
+    writeStorage(STORAGE_KEYS.productReviews, reviews);
+    return { ok: true, code: "reviewUpdated", reviews };
+  }
+
+  const review = {
+    id: Date.now(),
+    productId,
+    rating,
+    comment: String(payload.comment || "").trim(),
+    customerEmail,
+    customerName: String(payload.customerName || "").trim(),
+    createdAt: new Date().toISOString(),
+  };
+  reviews.unshift(review);
+  writeStorage(STORAGE_KEYS.productReviews, reviews);
+  return { ok: true, code: "reviewSaved", reviews };
+}
+
+export async function saveDeliveryAddress(payload) {
+  const addresses = readStorage(STORAGE_KEYS.savedAddresses, []);
+  const customerEmail = String(payload.customerEmail || "").trim().toLowerCase();
+  if (!customerEmail || !payload.label || !payload.zoneId) return { ok: false, code: "addressMissing" };
+
+  const zone = KIGALI_DELIVERY_ZONES.find((z) => z.id === payload.zoneId);
+  if (!zone) return { ok: false, code: "zoneInvalid" };
+
+  const address = {
+    id: Date.now(),
+    customerEmail,
+    label: String(payload.label || "").trim(),
+    zoneId: zone.id,
+    zoneName: zone.name,
+    district: zone.district,
+    deliveryFee: zone.fee,
+    street: String(payload.street || "").trim(),
+    instructions: String(payload.instructions || "").trim(),
+    createdAt: new Date().toISOString(),
+  };
+  addresses.unshift(address);
+  writeStorage(STORAGE_KEYS.savedAddresses, addresses);
+  return { ok: true, code: "addressSaved", addresses };
+}
+
+export async function deleteDeliveryAddress(addressId) {
+  const addresses = readStorage(STORAGE_KEYS.savedAddresses, []);
+  const next = addresses.filter((a) => a.id !== Number(addressId));
+  writeStorage(STORAGE_KEYS.savedAddresses, next);
+  return { ok: true, addresses: next };
 }
 
 export async function submitBranchReview(payload) {

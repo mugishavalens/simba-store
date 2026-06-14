@@ -5079,6 +5079,81 @@ body[data-theme="dark"] .deal-card {
   gap: 0.15rem;
 }
 
+/* ── Star ratings ─────────────────────────────────────────────────────────── */
+.star-row { display: inline-flex; gap: 1px; line-height: 1; }
+.star { font-size: 0.95em; }
+.star--full  { color: #f59e0b; }
+.star--half  { color: #f59e0b; opacity: 0.65; }
+.star--empty { color: var(--muted); opacity: 0.45; }
+.rating-count { font-size: 0.78rem; margin-left: 0.25em; }
+.product-card__rating { display: flex; align-items: center; gap: 0.3rem; margin-top: 0.15rem; font-size: 0.82rem; }
+.detail-rating { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; font-size: 0.9rem; }
+.detail-price-group { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }
+
+/* ── Breadcrumb ───────────────────────────────────────────────────────────── */
+.breadcrumb { display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.breadcrumb__link { color: var(--brand); text-decoration: none; }
+.breadcrumb__link:hover { text-decoration: underline; }
+.breadcrumb__sep { color: var(--muted); }
+.breadcrumb__current { color: var(--muted); }
+
+/* ── Qty control on detail page ───────────────────────────────────────────── */
+.detail-qty-row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }
+.detail-qty-label { font-size: 0.88rem; font-weight: 600; }
+.qty-control--detail { display: flex; align-items: center; gap: 0; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
+.qty-control--detail .qty-button { background: var(--surface-muted); border: none; padding: 0.35rem 0.75rem; font-size: 1rem; cursor: pointer; }
+.qty-control--detail .qty-button:disabled { opacity: 0.4; cursor: not-allowed; }
+.qty-control--detail .qty-value { padding: 0.35rem 0.6rem; font-weight: 700; min-width: 2rem; text-align: center; }
+
+/* ── Reviews section ─────────────────────────────────────────────────────── */
+.reviews-section { margin-top: 2rem; }
+.reviews-list { display: grid; gap: 0.75rem; margin-bottom: 1.25rem; }
+.review-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 1rem; }
+.review-card__head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem; flex-wrap: wrap; }
+.review-card__name { font-size: 0.9rem; }
+.review-card__date { font-size: 0.78rem; }
+.review-card__comment { margin: 0; font-size: 0.88rem; color: var(--text); }
+.review-form-wrap { background: var(--surface-muted); border-radius: var(--radius-md); padding: 1.25rem; margin-top: 1rem; }
+.review-form-wrap h3 { margin-top: 0; margin-bottom: 0.75rem; }
+
+/* ── Delivery mode toggle ────────────────────────────────────────────────── */
+.delivery-mode-toggle { margin-bottom: 1rem; }
+.delivery-mode-toggle__label { font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 0.4rem; }
+.delivery-mode-toggle__options { display: flex; gap: 0.5rem; }
+.delivery-mode-btn { border: 2px solid var(--line); background: var(--surface); border-radius: var(--radius-sm); padding: 0.5rem 1rem; cursor: pointer; font-size: 0.88rem; transition: all 0.15s; }
+.delivery-mode-btn.active, .delivery-mode-btn:hover { border-color: var(--brand); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+/* ── Pill for low stock ───────────────────────────────────────────────────── */
+.pill--low-stock { background: rgba(245, 158, 11, 0.12); color: #b45309; border: 1px solid rgba(245, 158, 11, 0.25); }
+
+/* ── Related products ────────────────────────────────────────────────────── */
+.product-grid--related { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+
+/* ── Buy Again section ───────────────────────────────────────────────────── */
+.buy-again-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem; margin-top: 0.75rem; }
+.buy-again-card { background: var(--surface-strong); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.buy-again-card__img { aspect-ratio: 1; overflow: hidden; border-radius: var(--radius-sm); }
+.buy-again-card__img img { width: 100%; height: 100%; object-fit: cover; }
+.buy-again-card__info { display: flex; flex-direction: column; gap: 0.15rem; }
+.buy-again-card__name { font-size: 0.82rem; font-weight: 600; line-height: 1.25; }
+.buy-again-card__price { font-size: 0.88rem; color: var(--brand); font-weight: 700; }
+
+/* ── Cart upsell ──────────────────────────────────────────────────────────── */
+.cart-upsell { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.cart-upsell__title { margin: 0 0 0.6rem; font-size: 0.85rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.cart-upsell__item { display: flex; align-items: center; gap: 0.6rem; padding: 0.4rem 0; border-bottom: 1px solid var(--line); }
+.cart-upsell__item:last-child { border-bottom: none; }
+.cart-upsell__img { width: 40px; height: 40px; flex-shrink: 0; border-radius: var(--radius-sm); overflow: hidden; }
+.cart-upsell__img img { width: 100%; height: 100%; object-fit: cover; }
+.cart-upsell__info { flex: 1; display: flex; flex-direction: column; }
+.cart-upsell__name { font-size: 0.8rem; font-weight: 600; }
+.cart-upsell__price { font-size: 0.78rem; color: var(--brand); }
+
+/* ── Saved addresses ──────────────────────────────────────────────────────── */
+.saved-addresses-list { display: grid; gap: 0.5rem; margin-bottom: 0.75rem; }
+.address-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 0.75rem; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
+.address-card__info { display: flex; flex-direction: column; gap: 0.1rem; font-size: 0.85rem; }
+
 .care-layout .care-stats {
   margin-bottom: 1.25rem;
 }

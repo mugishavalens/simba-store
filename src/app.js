@@ -1,10 +1,13 @@
 import {
   CATEGORY_BACKGROUNDS,
+  DELIVERY_TIME_SLOTS,
   GOOGLE_CLIENT_ID,
+  KIGALI_DELIVERY_ZONES,
   LANGUAGES,
   PAYMENT_METHODS,
   PICKUP_DEPOSIT_RWF,
   PICKUP_TIMES,
+  RECURRING_OPTIONS,
   SHOPPING_ASSISTANT_PROMPT,
   SIMBA_BRANCHES,
   STORAGE_KEYS,
@@ -58,6 +61,12 @@ import {
   subscribe,
   syncAccountLocation,
   setAssistantMessages,
+  submitProductReview,
+  getProductReviews,
+  saveDeliveryAddress,
+  deleteDeliveryAddress,
+  getMyAddresses,
+  reorderItems,
   toggleCart,
   updateInventory,
   updateAccountProfile,
@@ -70,6 +79,29 @@ import { translateCategory } from "./i18n.js";
 
 const BRAND_LOGO = "./assets/simba-logo.jpg";
 const CHECKOUT_AFTER_AUTH_KEY = "simba.checkout-after-auth";
+
+// ── checkout mode state ────────────────────────────────────────────────────────
+let checkoutDeliveryMode = "pickup"; // "pickup" | "home"
+let checkoutSelectedZoneId = "";
+
+// ── Star rating helpers ────────────────────────────────────────────────────────
+function renderStars(rating, maxStars = 5) {
+  const r = Math.round(Number(rating || 0) * 2) / 2;
+  let html = "";
+  for (let i = 1; i <= maxStars; i++) {
+    if (r >= i) html += `<span class="star star--full" aria-hidden="true">★</span>`;
+    else if (r >= i - 0.5) html += `<span class="star star--half" aria-hidden="true">★</span>`;
+    else html += `<span class="star star--empty" aria-hidden="true">☆</span>`;
+  }
+  return `<span class="star-row" aria-label="${r} out of ${maxStars}">${html}</span>`;
+}
+
+function getProductRatingSummary(productId) {
+  const reviews = getProductReviews(productId);
+  if (!reviews.length) return null;
+  const avg = reviews.reduce((s, r) => s + Number(r.rating || 0), 0) / reviews.length;
+  return { avg: Math.round(avg * 10) / 10, count: reviews.length };
+}
 
 const LANGUAGE_META = {
   en: { flag: "🇬🇧", name: "English",     short: "EN", native: "English",     tagline: "Shop in English" },
@@ -1234,6 +1266,7 @@ function renderProductCard(product, tr) {
         <h3 class="product-card__name">${escapeHtml(product.name)}</h3>
         <div class="product-card__meta">
           <span class="product-meta">${tr("unit")}: ${escapeHtml(product.unit)}</span>
+          ${(() => { const rs = getProductRatingSummary(product.id); return rs ? `<span class="product-card__rating">${renderStars(rs.avg)}<span class="muted rating-count">(${rs.count})</span></span>` : ""; })()}
           <span class="product-card__price-group">
             ${promo ? `<span class="product-card__price-was">${formatPrice(product.price)}</span>` : ""}
             <strong class="product-card__price">${formatPrice(effective)}</strong>
@@ -1259,18 +1292,58 @@ function renderProductView(state, productId, cartSummary, tr) {
     return `<main class="product-layout"><div class="empty-state"><h3>${tr("productNotFound")}</h3><a class="button" href="#/">${tr("backHome")}</a></div></main>`;
   }
 
+  const promo = getActivePromotion(product.id, state.promotions || []);
+  const effective = promo
+    ? Math.max(0, Math.round(Number(product.price) * (1 - Number(promo.percent) / 100)))
+    : Number(product.price);
+
+  const ratingSummary = getProductRatingSummary(product.id);
+  const productReviews = getProductReviews(product.id);
+  const cartItem = cartSummary.items.find((item) => Number(item.product.id) === Number(product.id));
+  const currentQty = cartItem ? cartItem.quantity : 0;
+
+  const relatedProducts = state.products
+    .filter((p) => p.category === product.category && p.id !== product.id && p.inStock)
+    .slice(0, 4);
+
+  const myOrders = (state.orders || []).filter(
+    (o) => String(o.customer?.email || "").toLowerCase() === String(state.currentUser?.email || "").toLowerCase()
+  );
+  const hasPurchased = myOrders.some((o) =>
+    (o.items || []).some((item) => Number(item.productId) === Number(product.id))
+  );
+  const myReview = productReviews.find(
+    (r) => String(r.customerEmail || "").toLowerCase() === String(state.currentUser?.email || "").toLowerCase()
+  );
+
+  const stockBadge = !product.inStock
+    ? `<span class="pill pill--warning">${tr("outOfStock")}</span>`
+    : (() => {
+        const total = Object.values(product.branchStock || {}).reduce((a, b) => a + Number(b || 0), 0);
+        return total > 0 && total <= 15
+          ? `<span class="pill pill--low-stock">⚠ ${tr("lowStock")}</span>`
+          : `<span class="pill pill--success">${tr("inStock")}</span>`;
+      })();
+
   return `
     <main class="product-layout">
-      <a class="button button--ghost" href="#/">${tr("backHome")}</a>
+      <nav class="breadcrumb" aria-label="breadcrumb">
+        <a class="breadcrumb__link" href="#/">${tr("breadcrumbHome")}</a>
+        <span class="breadcrumb__sep" aria-hidden="true">›</span>
+        <a class="breadcrumb__link" href="#/" data-breadcrumb-category="${escapeHtml(product.category)}">${renderCategoryLabel(state.language, product.category)}</a>
+        <span class="breadcrumb__sep" aria-hidden="true">›</span>
+        <span class="breadcrumb__current" aria-current="page">${escapeHtml(product.name)}</span>
+      </nav>
       <section class="detail-card">
         <div class="detail-card__media">
+          ${promo ? `<span class="promo-badge">-${Number(promo.percent)}${tr("promotionBadge")}</span>` : ""}
           ${renderHeartButton(product.id, state, { variant: "solid" })}
           ${renderProductImage(product, { eager: true })}
         </div>
         <div class="detail-card__content">
           <div class="tag-row">
             <span class="pill">${renderCategoryLabel(state.language, product.category)}</span>
-            <span class="pill">${product.inStock ? tr("inStock") : tr("outOfStock")}</span>
+            ${stockBadge}
           </div>
           <div>
             <h1>${escapeHtml(product.name)}</h1>
@@ -1279,11 +1352,44 @@ function renderProductView(state, productId, cartSummary, tr) {
               ${tr("unit")}: ${escapeHtml(product.unit)}
             </p>
           </div>
-          <div class="product-card__price">${formatPrice(product.price)}</div>
-          <div class="detail-meta">
-            <span class="muted">ID ${product.id}</span>
-            <span class="muted">${cartSummary.count} ${tr("cartCount")}</span>
+          ${ratingSummary
+            ? `<div class="detail-rating">${renderStars(ratingSummary.avg)} <span class="muted">${ratingSummary.avg} ${tr("reviewAvg")} (${ratingSummary.count})</span></div>`
+            : `<div class="detail-rating muted">${tr("noReviews")}</div>`
+          }
+          <div class="product-card__price-group detail-price-group">
+            ${promo ? `<span class="product-card__price-was">${formatPrice(product.price)}</span>` : ""}
+            <strong class="product-card__price">${formatPrice(effective)}</strong>
           </div>
+          ${
+            state.isAuthenticated
+              ? `<div class="detail-qty-row">
+                  <label class="detail-qty-label">${tr("qtyLabel")}</label>
+                  <div class="qty-control qty-control--detail">
+                    <button class="qty-button cart-qty" data-product-id="${product.id}" data-delta="-1" ${currentQty === 0 ? "disabled" : ""}>−</button>
+                    <span class="qty-value">${currentQty}</span>
+                    <button class="qty-button cart-qty" data-product-id="${product.id}" data-delta="1">+</button>
+                  </div>
+                </div>`
+              : ""
+          }
+          <div class="detail-actions">
+            ${state.isAuthenticated
+              ? `<button class="button button--primary add-to-cart" data-product-id="${product.id}">${tr("addToCart")}</button>`
+              : `<a class="button button--primary" href="#/auth/signin">${tr("navSignIn")}</a>`
+            }
+            ${state.isAuthenticated
+              ? `<button class="button button--accent" id="buy-now" data-product-id="${product.id}">${tr("goCheckout")}</button>`
+              : ""
+            }
+            <button type="button" class="button button--ghost" data-wishlist-toggle="${product.id}" aria-pressed="${isInWishlist(product.id)}">
+              <span aria-hidden="true">${isInWishlist(product.id) ? "♥" : "♡"}</span>
+              ${isInWishlist(product.id) ? getWishlistLabels(state.language).remove : getWishlistLabels(state.language).add}
+            </button>
+          </div>
+          ${!product.inStock
+            ? `<button class="button button--ghost" id="notify-me-btn" data-product-id="${product.id}">🔔 ${tr("notifyMe")}</button>`
+            : ""
+          }
           ${
             product.inStock
               ? `<div class="branch-availability">
@@ -1303,19 +1409,68 @@ function renderProductView(state, productId, cartSummary, tr) {
                 </div>`
               : `<p class="muted">${tr("outOfStock")}</p>`
           }
-          <div class="detail-actions">
-            ${state.isAuthenticated ? `<button class="button button--primary add-to-cart" data-product-id="${product.id}">${tr("addToCart")}</button>` : `<a class="button button--primary" href="#/auth/signin">${tr("navSignIn")}</a>`}
-            ${state.isAuthenticated ? `<button class="button button--accent" id="buy-now" data-product-id="${product.id}">${tr("goCheckout")}</button>` : ""}
-            <button type="button" class="button button--ghost" data-wishlist-toggle="${product.id}" aria-pressed="${isInWishlist(product.id)}">
-              <span aria-hidden="true">${isInWishlist(product.id) ? "♥" : "♡"}</span>
-              ${isInWishlist(product.id) ? getWishlistLabels(state.language).remove : getWishlistLabels(state.language).add}
-            </button>
-          </div>
           <div class="banner">
             <h3>${tr("momoHint")}</h3>
             <p>${escapeHtml(product.name)} ${tr("demoCheckoutReady")}</p>
           </div>
         </div>
+      </section>
+
+      ${relatedProducts.length
+        ? `<section class="section">
+            <div class="section__header"><h2 class="section__title">${tr("relatedTitle")}</h2></div>
+            <div class="product-grid product-grid--related">
+              ${relatedProducts.map((p) => renderProductCard(p, tr)).join("")}
+            </div>
+          </section>`
+        : ""
+      }
+
+      <section class="section reviews-section" id="product-reviews">
+        <div class="section__header">
+          <h2 class="section__title">${tr("reviewsTitle")}</h2>
+          ${ratingSummary ? `<div>${renderStars(ratingSummary.avg)} ${ratingSummary.avg}/5 (${ratingSummary.count})</div>` : ""}
+        </div>
+        ${
+          productReviews.length
+            ? `<div class="reviews-list">
+                ${productReviews.map((r) => `
+                  <div class="review-card">
+                    <div class="review-card__head">
+                      ${renderStars(r.rating)}
+                      <strong class="review-card__name">${escapeHtml(r.customerName || "Customer")}</strong>
+                      <span class="muted review-card__date">${new Date(r.createdAt).toLocaleDateString()}</span>
+                    </div>
+                    ${r.comment ? `<p class="review-card__comment">${escapeHtml(r.comment)}</p>` : ""}
+                  </div>
+                `).join("")}
+              </div>`
+            : `<p class="muted">${tr("noReviews")}</p>`
+        }
+        ${
+          state.isAuthenticated && hasPurchased
+            ? `<div class="review-form-wrap">
+                <h3>${tr("writeReview")}</h3>
+                ${myReview ? `<p class="auth-feedback auth-feedback--success">✓ ${tr("reviewUpdated")}</p>` : ""}
+                <form id="product-review-form" data-product-id="${product.id}">
+                  <label class="checkout-field">
+                    <span>${tr("reviewRating")}</span>
+                    <select name="rating" required>
+                      <option value="">—</option>
+                      ${[5,4,3,2,1].map((n) => `<option value="${n}" ${myReview?.rating === n ? "selected" : ""}>${"★".repeat(n)} (${n})</option>`).join("")}
+                    </select>
+                  </label>
+                  <label class="checkout-field">
+                    <span>${tr("reviewComment")}</span>
+                    <textarea name="comment" placeholder="${tr("reviewCommentPlaceholder")}">${escapeHtml(myReview?.comment || "")}</textarea>
+                  </label>
+                  <button class="button button--primary" type="submit">${tr("submitReview")}</button>
+                </form>
+              </div>`
+            : state.isAuthenticated && !hasPurchased
+              ? `<p class="muted">${tr("purchaseRequired")}</p>`
+              : ""
+        }
       </section>
     </main>
   `;
@@ -1384,11 +1539,47 @@ function renderCheckoutView(state, cartSummary, tr) {
               </div>
             `
             : `<form id="checkout-form">
+                <div class="delivery-mode-toggle">
+                  <span class="delivery-mode-toggle__label">${tr("deliveryMode")}</span>
+                  <div class="delivery-mode-toggle__options">
+                    <button type="button" class="delivery-mode-btn ${checkoutDeliveryMode === "pickup" ? "active" : ""}" data-delivery-mode="pickup">🏪 ${tr("deliveryModePickup")}</button>
+                    <button type="button" class="delivery-mode-btn ${checkoutDeliveryMode === "home" ? "active" : ""}" data-delivery-mode="home">🛵 ${tr("deliveryModeHome")}</button>
+                  </div>
+                </div>
+
+                ${checkoutDeliveryMode === "pickup" ? `
                 <div class="summary-card" style="margin-bottom:1rem">
                   <div class="summary-card__row"><span>${tr("pickupOnlyLabel")}</span><strong>${tr("pickupOnlyValue")}</strong></div>
                   <div class="summary-card__row"><span>${tr("pickupDeposit")}</span><strong>${formatPrice(depositAmount)}</strong></div>
                   <p class="notice">${tr("pickupDepositHint")}</p>
-                </div>
+                </div>` : `
+                <div class="summary-card" style="margin-bottom:1rem" id="delivery-zone-card">
+                  <div class="summary-card__row">
+                    <span>${tr("deliveryZone")}</span>
+                  </div>
+                  <label class="checkout-field" style="margin-top:0.5rem">
+                    <select name="deliveryZoneId" id="delivery-zone-select" required>
+                      <option value="">${tr("deliveryZonePlaceholder")}</option>
+                      ${KIGALI_DELIVERY_ZONES.map((z) => `<option value="${z.id}" ${checkoutSelectedZoneId === z.id ? "selected" : ""}>${escapeHtml(z.name)} — ${formatPrice(z.fee)}</option>`).join("")}
+                    </select>
+                  </label>
+                  ${checkoutSelectedZoneId ? (() => {
+                    const zone = KIGALI_DELIVERY_ZONES.find((z) => z.id === checkoutSelectedZoneId);
+                    return zone ? `<div class="summary-card__row" style="margin-top:0.5rem"><span>${tr("deliveryFee")}</span><strong>${formatPrice(zone.fee)}</strong></div>` : "";
+                  })() : ""}
+                  <label class="checkout-field" style="margin-top:0.75rem">
+                    <span>${tr("deliveryAddress")}</span>
+                    <input name="deliveryStreet" placeholder="${tr("deliveryAddressPlaceholder")}" />
+                  </label>
+                  <label class="checkout-field" style="margin-top:0.5rem">
+                    <span>${tr("deliveryTimeSlot")}</span>
+                    <select name="deliveryTimeSlot">
+                      <option value="">—</option>
+                      ${DELIVERY_TIME_SLOTS.map((s) => `<option value="${s.id}">${escapeHtml(s.label)}</option>`).join("")}
+                    </select>
+                  </label>
+                </div>`}
+
                 <div class="checkout-grid">
                   <label class="checkout-field">
                     <span>${tr("fullName")}</span>
@@ -1404,22 +1595,24 @@ function renderCheckoutView(state, cartSummary, tr) {
                     <span>${tr("district")}</span>
                     <input name="district" required />
                   </label>
+                  ${checkoutDeliveryMode === "pickup" ? `
                   <label class="checkout-field">
                     <span>${tr("pickupBranch")}${nearestBranchState ? ` <span class="muted" style="font-weight:400;font-size:0.8em">— ${tr("branchesNearest")}: ${escapeHtml(nearestBranchState.name)}</span>` : ""}</span>
                     <select name="branchId" required>
                       <option value="">${tr("checkoutBranchPlaceholder")}</option>
                       ${SIMBA_BRANCHES.map((branch) => `<option value="${branch.id}" ${nearestBranchState?.id === branch.id ? "selected" : ""}>${escapeHtml(branch.name)}${nearestBranchState?.id === branch.id ? " ★" : ""}</option>`).join("")}
                     </select>
-                  </label>
+                  </label>` : `<input type="hidden" name="branchId" value="${SIMBA_BRANCHES[0]?.id || 1}" />`}
                 </div>
                 <div class="checkout-grid">
+                  ${checkoutDeliveryMode === "pickup" ? `
                   <label class="checkout-field">
                     <span>${tr("pickupTime")}</span>
                     <select name="pickupTime" required>
                       <option value="">${tr("pickupTime")}</option>
                       ${PICKUP_TIMES.map((slot) => `<option value="${escapeHtml(slot)}">${escapeHtml(slot)}</option>`).join("")}
                     </select>
-                  </label>
+                  </label>` : ""}
                   <label class="checkout-field">
                     <span>${tr("paymentMethod")}</span>
                     <select name="paymentMethod" id="payment-method">
@@ -1435,6 +1628,12 @@ function renderCheckoutView(state, cartSummary, tr) {
                     </select>
                   </label>
                 </div>
+                <label class="checkout-field" style="margin-top:0.5rem">
+                  <span>${tr("recurringOrder")}</span>
+                  <select name="recurringOption">
+                    ${RECURRING_OPTIONS.map((opt) => `<option value="${opt.id}">${escapeHtml(tr(opt.labelKey) || opt.id)}</option>`).join("")}
+                  </select>
+                </label>
                 <label class="checkout-field" id="momo-field" style="${isMomoSelected ? "" : "display:none"}">
                   <span>${tr("momoNumber")} ${selectedPaymentMethod === "airtel_money" ? `<span class="muted">(Airtel)</span>` : selectedPaymentMethod === "mtn_momo" ? `<span class="muted">(MTN)</span>` : ""}</span>
                   <input name="momoNumber" placeholder="${selectedPaymentMethod === "airtel_money" ? "073XXXXXXX or 075XXXXXXX" : "078XXXXXXX or 079XXXXXXX"}" inputmode="tel" />
@@ -1488,8 +1687,20 @@ function renderCheckoutView(state, cartSummary, tr) {
             : `<p>${tr("emptyCartText")}</p>`
         }
         <div class="summary-card__row"><span>${tr("subtotal")}</span><strong>${formatPrice(cartSummary.subtotal)}</strong></div>
-        <div class="summary-card__row"><span>${tr("pickupDeposit")}</span><strong>${formatPrice(depositAmount)}</strong></div>
-        <div class="summary-card__row summary-card__total"><span>${tr("total")}</span><strong>${formatPrice(cartSummary.total)}</strong></div>
+        ${checkoutDeliveryMode === "pickup"
+          ? `<div class="summary-card__row"><span>${tr("pickupDeposit")}</span><strong>${formatPrice(depositAmount)}</strong></div>`
+          : (() => {
+              const zone = KIGALI_DELIVERY_ZONES.find((z) => z.id === checkoutSelectedZoneId);
+              return zone
+                ? `<div class="summary-card__row"><span>${tr("deliveryFee")}</span><strong>${formatPrice(zone.fee)}</strong></div>
+                   <div class="summary-card__row summary-card__total"><span>${tr("total")}</span><strong>${formatPrice(cartSummary.subtotal + zone.fee)}</strong></div>`
+                : `<div class="summary-card__row summary-card__total"><span>${tr("total")}</span><strong>${formatPrice(cartSummary.total)}</strong></div>`;
+            })()
+        }
+        ${checkoutDeliveryMode === "pickup"
+          ? `<div class="summary-card__row summary-card__total"><span>${tr("total")}</span><strong>${formatPrice(cartSummary.total)}</strong></div>`
+          : ""
+        }
         <p class="notice">${tr("momoHint")}</p>
       </aside>
     </main>
@@ -2650,6 +2861,89 @@ function renderAccountView(state, cartSummary, tr) {
                   }
                 </div>
               </section>
+              <section class="summary-card" id="buy-again-section">
+                <h3>${tr("buyAgainTitle")}</h3>
+                <p class="muted">${tr("buyAgainLead")}</p>
+                ${(() => {
+                  const allItems = [];
+                  const seen = new Set();
+                  for (const order of customerOrders) {
+                    for (const item of (order.items || [])) {
+                      const pid = Number(item.productId);
+                      if (seen.has(pid)) continue;
+                      seen.add(pid);
+                      const product = state.products.find((p) => Number(p.id) === pid);
+                      if (product) allItems.push({ order, item, product });
+                    }
+                  }
+                  if (!allItems.length) return `<p class="muted">${tr("noOrdersForReorder")}</p>`;
+                  return `
+                    <div class="buy-again-grid">
+                      ${allItems.slice(0, 6).map(({ product, order }) => {
+                        const promo = getActivePromotion(product.id, state.promotions || []);
+                        const eff = promo ? Math.max(0, Math.round(product.price * (1 - promo.percent / 100))) : product.price;
+                        return `
+                          <div class="buy-again-card">
+                            <div class="buy-again-card__img">${renderProductImage(product)}</div>
+                            <div class="buy-again-card__info">
+                              <strong class="buy-again-card__name">${escapeHtml(product.name)}</strong>
+                              <span class="buy-again-card__price">${formatPrice(eff)}</span>
+                            </div>
+                            <button class="button button--primary button--sm add-to-cart" data-product-id="${product.id}">+ ${tr("addToCart")}</button>
+                          </div>
+                        `;
+                      }).join("")}
+                    </div>
+                    ${customerOrders.length > 0
+                      ? `<button class="button button--ghost" id="reorder-last-btn" data-order-id="${customerOrders[0].id}" style="margin-top:0.75rem">↩ ${tr("reorderAll")}</button>`
+                      : ""}
+                  `;
+                })()}
+              </section>
+
+              <section class="summary-card" id="saved-addresses-section">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+                  <h3 style="margin:0">${tr("savedAddresses")}</h3>
+                </div>
+                ${(() => {
+                  const myAddresses = getMyAddresses();
+                  return myAddresses.length
+                    ? `<div class="saved-addresses-list">
+                        ${myAddresses.map((addr) => `
+                          <div class="address-card">
+                            <div class="address-card__info">
+                              <strong>${escapeHtml(addr.label)}</strong>
+                              <span class="muted">${escapeHtml(addr.zoneName)} (${addr.district}) — ${formatPrice(addr.deliveryFee)}</span>
+                              ${addr.street ? `<span class="muted">${escapeHtml(addr.street)}</span>` : ""}
+                            </div>
+                            <button class="button button--ghost button--sm delete-address-btn" data-address-id="${addr.id}">× ${tr("deleteAddress")}</button>
+                          </div>
+                        `).join("")}
+                      </div>`
+                    : `<p class="muted">${tr("noSavedAddresses")}</p>`;
+                })()}
+                <form id="add-address-form" class="auth-form" style="margin-top:1rem">
+                  <div class="checkout-grid">
+                    <label class="checkout-field">
+                      <span>${tr("addressLabel")}</span>
+                      <input name="label" placeholder="${tr("addressLabelPlaceholder")}" required />
+                    </label>
+                    <label class="checkout-field">
+                      <span>${tr("deliveryZone")}</span>
+                      <select name="zoneId" required>
+                        <option value="">${tr("deliveryZonePlaceholder")}</option>
+                        ${KIGALI_DELIVERY_ZONES.map((z) => `<option value="${z.id}">${escapeHtml(z.name)} — ${formatPrice(z.fee)}</option>`).join("")}
+                      </select>
+                    </label>
+                  </div>
+                  <label class="checkout-field" style="margin-top:0.5rem">
+                    <span>${tr("deliveryAddress")}</span>
+                    <input name="street" placeholder="${tr("deliveryAddressPlaceholder")}" />
+                  </label>
+                  <button class="button button--accent" type="submit" style="margin-top:0.75rem">+ ${tr("addAddress")}</button>
+                </form>
+              </section>
+
               <section class="summary-card" id="customer-chatbox">
                 <h3>${tr("customerChatboxTitle")}</h3>
                 <p class="muted">${tr("customerChatboxLead")}</p>
@@ -3761,6 +4055,35 @@ function renderCart(state, cartSummary, tr) {
           ${checkoutAction}
           <button class="button button--ghost" id="clear-cart">${tr("clearCart")}</button>
         </div>
+        ${(() => {
+          if (!cartSummary.items.length) return "";
+          const inCart = new Set(cartSummary.items.map((i) => Number(i.product.id)));
+          const firstCategory = cartSummary.items[0]?.product?.category;
+          const suggestions = (state.products || [])
+            .filter((p) => p.inStock && !inCart.has(Number(p.id)) && p.category === firstCategory)
+            .sort(() => Math.random() - 0.5)
+            .slice(0, 3);
+          if (!suggestions.length) return "";
+          return `
+            <div class="cart-upsell">
+              <h4 class="cart-upsell__title">${tr("upsellTitle")}</h4>
+              ${suggestions.map((p) => {
+                const promo = getActivePromotion(p.id, state.promotions || []);
+                const eff = promo ? Math.max(0, Math.round(p.price * (1 - promo.percent / 100))) : p.price;
+                return `
+                  <div class="cart-upsell__item">
+                    <div class="cart-upsell__img">${renderProductImage(p)}</div>
+                    <div class="cart-upsell__info">
+                      <span class="cart-upsell__name">${escapeHtml(p.name)}</span>
+                      <span class="cart-upsell__price">${formatPrice(eff)}</span>
+                    </div>
+                    <button class="button button--ghost button--sm add-to-cart" data-product-id="${p.id}">+</button>
+                  </div>
+                `;
+              }).join("")}
+            </div>
+          `;
+        })()}
       </div>
     </aside>
   `;
@@ -4907,6 +5230,110 @@ function bindEvents(currentRoute) {
       if (btn) btn.textContent = "🔍";
       render();
     }
+  });
+
+  // ── Delivery mode toggle (checkout) ──────────────────────────────────────────
+  document.querySelectorAll(".delivery-mode-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      checkoutDeliveryMode = btn.dataset.deliveryMode || "pickup";
+      checkoutSelectedZoneId = "";
+      render();
+    });
+  });
+
+  document.querySelector("#delivery-zone-select")?.addEventListener("change", (e) => {
+    checkoutSelectedZoneId = e.target.value;
+    render();
+  });
+
+  // ── Product review form ───────────────────────────────────────────────────────
+  document.querySelector("#product-review-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const state = getState();
+    const productId = Number(event.currentTarget.dataset.productId);
+    const result = await submitProductReview({
+      productId,
+      rating: Number(form.get("rating")),
+      comment: String(form.get("comment") || ""),
+      customerEmail: state.currentUser?.email || "",
+      customerName: state.currentUser?.fullName || "",
+    });
+    if (!result.ok) {
+      const msgs = { purchaseRequired: result.code, ratingRequired: result.code };
+      showFeedback(msgs[result.code] || "Error");
+    }
+    render();
+  });
+
+  // ── Notify me button ──────────────────────────────────────────────────────────
+  document.querySelector("#notify-me-btn")?.addEventListener("click", () => {
+    const btn = document.querySelector("#notify-me-btn");
+    if (btn) {
+      btn.textContent = `✓ ${t("notifyMeDone")}`;
+      btn.disabled = true;
+    }
+  });
+
+  // ── Breadcrumb category navigation ────────────────────────────────────────────
+  document.querySelectorAll("[data-breadcrumb-category]").forEach((link) => {
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      const category = link.dataset.breadcrumbCategory;
+      setFilter("category", category);
+      location.hash = "/";
+    });
+  });
+
+  // ── Reorder last order ────────────────────────────────────────────────────────
+  document.querySelector("#reorder-last-btn")?.addEventListener("click", () => {
+    const btn = document.querySelector("#reorder-last-btn");
+    const orderId = Number(btn?.dataset.orderId);
+    const state = getState();
+    const order = (state.orders || []).find((o) => Number(o.id) === orderId);
+    if (!order) return;
+    const added = reorderItems(order);
+    if (added > 0 && btn) {
+      btn.textContent = `✓ ${t("reorderDone")}`;
+      btn.disabled = true;
+    }
+  });
+
+  // ── Delete saved address ──────────────────────────────────────────────────────
+  document.querySelectorAll(".delete-address-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const addressId = Number(btn.dataset.addressId);
+      await deleteDeliveryAddress(addressId);
+      render();
+    });
+  });
+
+  // ── Add address form ──────────────────────────────────────────────────────────
+  document.querySelector("#add-address-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const state = getState();
+    const result = await saveDeliveryAddress({
+      customerEmail: state.currentUser?.email || "",
+      label: form.get("label"),
+      zoneId: form.get("zoneId"),
+      street: form.get("street"),
+    });
+    if (result.ok) {
+      event.currentTarget.reset();
+    }
+    render();
+  });
+
+  // ── Qty control on product detail page ───────────────────────────────────────
+  document.querySelectorAll(".qty-control--detail .cart-qty").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const productId = Number(btn.dataset.productId);
+      const delta = Number(btn.dataset.delta);
+      if (delta > 0) addToCart(productId);
+      else removeFromCart(productId);
+      render();
+    });
   });
 
   document.querySelector("#customer-notifications-toggle")?.addEventListener("click", (e) => {

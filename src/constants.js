@@ -16,6 +16,8 @@ export const STORAGE_KEYS = {
   productSnapshot: "simba.product-snapshot.v1",
   assistantMessages: "simba.assistant-messages.v1",
   branchReviews: "simba.branch-reviews.v1",
+  productReviews: "simba.product-reviews.v1",
+  savedAddresses: "simba.saved-addresses.v1",
   suppliers: "simba.suppliers.v1",
   promotions: "simba.promotions.v1",
   adminTab: "simba.admin-tab.v1",
@@ -60,6 +62,32 @@ export const DEFAULT_FILTERS = {
 export const PAYMENT_METHODS = ["momo", "card", "cash"];
 
 export const PICKUP_DEPOSIT_RWF = 500;
+
+export const KIGALI_DELIVERY_ZONES = [
+  { id: "nyarugenge_cbd",      name: "Nyarugenge – CBD / Ville",        district: "Nyarugenge", fee: 1000 },
+  { id: "nyarugenge_biryogo",  name: "Nyarugenge – Biryogo",           district: "Nyarugenge", fee: 1000 },
+  { id: "nyarugenge_gitega",   name: "Nyarugenge – Gitega",            district: "Nyarugenge", fee: 1200 },
+  { id: "nyarugenge_nyamirambo", name: "Nyarugenge – Nyamirambo",      district: "Nyarugenge", fee: 1500 },
+  { id: "gasabo_remera",       name: "Gasabo – Remera",                district: "Gasabo",     fee: 1500 },
+  { id: "gasabo_kimironko",    name: "Gasabo – Kimironko",             district: "Gasabo",     fee: 1500 },
+  { id: "gasabo_kacyiru",      name: "Gasabo – Kacyiru",               district: "Gasabo",     fee: 1200 },
+  { id: "gasabo_gisozi",       name: "Gasabo – Gisozi",                district: "Gasabo",     fee: 2000 },
+  { id: "gasabo_kinyinya",     name: "Gasabo – Kinyinya",              district: "Gasabo",     fee: 2000 },
+  { id: "gasabo_kibagabaga",   name: "Gasabo – Kibagabaga",            district: "Gasabo",     fee: 1800 },
+  { id: "gasabo_ndera",        name: "Gasabo – Ndera",                 district: "Gasabo",     fee: 2500 },
+  { id: "kicukiro_gikondo",    name: "Kicukiro – Gikondo",             district: "Kicukiro",   fee: 1500 },
+  { id: "kicukiro_kanombe",    name: "Kicukiro – Kanombe",             district: "Kicukiro",   fee: 2000 },
+  { id: "kicukiro_niboye",     name: "Kicukiro – Niboye",              district: "Kicukiro",   fee: 1800 },
+  { id: "kicukiro_gatenga",    name: "Kicukiro – Gatenga",             district: "Kicukiro",   fee: 1800 },
+  { id: "kicukiro_masaka",     name: "Kicukiro – Masaka",              district: "Kicukiro",   fee: 2500 },
+];
+
+export const DELIVERY_TIME_SLOTS = [
+  "08:00 – 10:00", "10:00 – 12:00", "12:00 – 14:00",
+  "14:00 – 16:00", "16:00 – 18:00", "18:00 – 20:00",
+];
+
+export const RECURRING_OPTIONS = ["none", "weekly", "biweekly", "monthly"];
 
 export const PICKUP_TIMES = [
   "08:00 - 09:00", "09:00 - 10:00", "10:00 - 11:00",

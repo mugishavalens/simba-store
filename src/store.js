@@ -2,20 +2,23 @@ import {
   createOrder,
   createCareUser as createCareUserBackend,
   deleteCareUser as deleteCareUserBackend,
+  deleteDeliveryAddress as deleteDeliveryAddressBackend,
   hydrateSession,
   loginUser,
   loginWithGoogleUser,
   replySupportMessage,
   registerUser,
   resetUserPassword,
+  saveDeliveryAddress as saveDeliveryAddressBackend,
   submitSupportMessage,
   submitBranchReview,
+  submitProductReview as submitProductReviewBackend,
   updateBranchInventory,
   updateOrderStatus,
   updateUserLocation,
   updateUserProfile,
 } from "./backend.js";
-import { DEFAULT_FILTERS, DEFAULT_MIN_STOCK, SIMBA_BRANCHES, STORAGE_KEYS } from "./constants.js";
+import { DEFAULT_FILTERS, DEFAULT_MIN_STOCK, KIGALI_DELIVERY_ZONES, SIMBA_BRANCHES, STORAGE_KEYS } from "./constants.js";
 import { formatPrice } from "./utils.js";
 import { t } from "./i18n.js";
 
@@ -38,6 +41,8 @@ const state = {
   orders: session.orders,
   messages: session.messages,
   branchReviews: session.branchReviews || [],
+  productReviews: readStorage(STORAGE_KEYS.productReviews, []),
+  savedAddresses: readStorage(STORAGE_KEYS.savedAddresses, []),
   suppliers: readStorage(STORAGE_KEYS.suppliers, [
     { id: 1, name: "Inyange Industries", contact: "Sales Office", phone: "+250 788 100 200", email: "sales@inyange.rw", notes: "Dairy & juices" },
     { id: 2, name: "Bralirwa", contact: "Distribution", phone: "+250 788 300 400", email: "orders@bralirwa.rw", notes: "Beverages" },
@@ -565,6 +570,71 @@ export function clearWishlist() {
   state.wishlist = [];
   persist(STORAGE_KEYS.wishlist, []);
   emit();
+}
+
+export async function submitProductReview(payload) {
+  const result = await submitProductReviewBackend(payload);
+  if (result.ok) {
+    state.productReviews = result.reviews;
+    persist(STORAGE_KEYS.productReviews, result.reviews);
+  }
+  emit();
+  return result;
+}
+
+export function getProductReviews(productId) {
+  const id = Number(productId);
+  return (state.productReviews || []).filter((r) => Number(r.productId) === id);
+}
+
+export async function saveDeliveryAddress(payload) {
+  const result = await saveDeliveryAddressBackend(payload);
+  if (result.ok) {
+    state.savedAddresses = result.addresses;
+    persist(STORAGE_KEYS.savedAddresses, result.addresses);
+  }
+  emit();
+  return result;
+}
+
+export async function deleteDeliveryAddress(addressId) {
+  const result = await deleteDeliveryAddressBackend(addressId);
+  if (result.ok) {
+    state.savedAddresses = result.addresses;
+    persist(STORAGE_KEYS.savedAddresses, result.addresses);
+  }
+  emit();
+  return result;
+}
+
+export function getMyAddresses() {
+  const email = String(state.currentUser?.email || "").toLowerCase();
+  return (state.savedAddresses || []).filter(
+    (a) => String(a.customerEmail || "").toLowerCase() === email
+  );
+}
+
+export function reorderItems(order) {
+  if (!order || !Array.isArray(order.items) || !order.items.length) return 0;
+  const products = state.products;
+  let added = 0;
+  for (const item of order.items) {
+    const product = products.find((p) => Number(p.id) === Number(item.productId));
+    if (!product) continue;
+    const qty = Number(item.quantity || 1);
+    const existing = state.cart.find((c) => Number(c.productId) === Number(product.id));
+    if (existing) {
+      existing.quantity = Math.min(99, existing.quantity + qty);
+    } else {
+      state.cart.push({ productId: product.id, quantity: qty });
+    }
+    added++;
+  }
+  if (added > 0) {
+    persist(STORAGE_KEYS.cart, state.cart);
+    emit();
+  }
+  return added;
 }
 
 export function setAdminTab(tab) {
