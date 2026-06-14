@@ -1,0 +1,59 @@
+Task Brief
+Available when contest starts
+
+Simba Supermarket: Platform Rebuild Contest. Rebuild Simba as a modern, fast, mobile-first supermarket platform for Rwanda. This is a fresh final-set contest: submit a new GitHub repository and a new live demo for this version.
+
+Requirements
+
+✓ Display all 789 products from the dataset grouped by the 11 categories, with subcategory filtering.
+✓ Full-text search with instant results. Include filters for category, price range in RWF, and availability; include sorting by price, name, and relevance.
+✓ Cart: add items, remove items, update quantity, show a running RWF total, persist across reloads, and show an item-count badge.
+✓ Responsive mobile-first design from 360px upward, with touch-friendly targets of at least 44px and clear mobile navigation.
+✓ User authentication: register with name, email, Rwandan phone, password, and Google option; login; persistent session; profile page.
+✓ Delivery management: saved addresses, Kigali district zones, delivery fee by zone, and preferred delivery time slot.
+✓ Deployed and accessible via a public URL such as Vercel, Netlify, or Railway. The demo must load without errors and environment variables must be secured.
+Bonus (extra points)
+
+⭐ MoMo payment: MTN Mobile Money or Airtel Money checkout flow. Real MTN MoMo API integration earns full marks.
+⭐ 3 languages: English, French, Kinyarwanda. Full UI translation with a visible header switcher; Kinyarwanda must cover all core strings.
+⭐ Product detail page: dedicated URL, full info, quantity selector, Add to Cart/Wishlist, related products carousel, and breadcrumb navigation.
+⭐ Dark mode: light/dark toggle, preference saved to localStorage, and system preference respected on first load.
+⭐ Great product images: real Cloudinary images from the dataset, Unsplash/Pexels fallbacks, no broken links, and lazy loading.
+⭐ Order tracking: status timeline from Placed to Confirmed to Packed to Out for Delivery to Delivered, with past orders in account.
+⭐ Wishlist / favourites: persists for logged-in users, with one-click move to cart.
+⭐ Promotions & deals: dedicated page, discount badges, and countdown timer for limited offers.
+⭐ Admin dashboard: password-protected, view orders, revenue, and top products; mark orders as confirmed or delivered.
+⭐ Smart reorder: Buy Again section from past orders, with one-click re-add of a full previous order to cart.
+⭐ Product reviews & ratings: 1-5 stars plus text review for purchased products; average rating shown on cards and detail pages.
+⭐ Real-time stock indicator: In Stock, Low Stock, Out of Stock states; Notify Me waitlist for out-of-stock items.
+⭐ Cart upsell: 3-5 complementary product suggestions that update dynamically as cart contents change.
+⭐ Scheduled & recurring orders: weekly, bi-weekly, or monthly repeat at checkout; next delivery shown in dashboard.
+⭐ Performance budget: Lighthouse mobile score >= 80, LCP <= 3.5s, CLS <= 0.1; WebP/AVIF images, no render-blocking scripts; submit Lighthouse screenshot.
+Dataset
+
+789 real products scraped from simbaonlineshopping.com across 10 categories — real product images hosted on Cloudinary, all prices in Rwandan Francs (RWF).
+
+Download simba_products.json
+AI Grading Criteria
+
+Core Commerce / 35
+
+Product catalog, search, filters, cart, checkout, and delivery flow
+
+Account Experience / 20
+
+Authentication, profile, addresses, saved state, and order history
+
+Mobile UI/UX / 20
+
+Polished mobile-first experience, responsive layout, and touch-friendly navigation
+
+Localization & Trust / 15
+
+English, French, Kinyarwanda support plus reliable images and no broken states
+
+Technical Quality / 10
+
+Public deployment, secured environment variables, performance, and code quality
+
+Use any stack: React, Vue, Next.js, plain HTML - your choice

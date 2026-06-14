@@ -447,5 +447,7 @@ export function route() {
   if (path === "care") return { name: "care" };
   if (path === "clients") return { name: "clients" };
   if (path === "branch") return { name: "branch" };
+  if (path === "promotions") return { name: "promotions" };
+  if (path === "wishlist") return { name: "wishlist" };
   return { name: "home" };
 }

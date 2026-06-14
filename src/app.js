@@ -451,6 +451,10 @@ function render() {
     view = renderBranchOpsView(state, tr);
   } else if (currentRoute.name === "care") {
     view = renderCustomerCareView(state, tr);
+  } else if (currentRoute.name === "promotions") {
+    view = renderPromotionsView(state, tr);
+  } else if (currentRoute.name === "wishlist") {
+    view = renderWishlistPage(state, cartSummary, tr);
   } else {
     view = renderHomeView(state, categories, filteredProducts, cartSummary, tr);
   }
@@ -552,6 +556,7 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
               : isBranchStaff
                 ? `<a class="main-nav__link" href="#/branch">${BRANCH_OPS_LABELS[state.language]?.nav || BRANCH_OPS_LABELS.en.nav}</a>`
                 : `
+                  <a class="main-nav__link nav-deals-link" href="#/promotions">🔥 ${tr("navDeals") || "Deals"}</a>
                   <a class="main-nav__link" href="#branches">${tr("navBranches")}</a>
                   <a class="main-nav__link" href="#support">${tr("navSupport")}</a>
                   <a class="main-nav__link" href="#about">${tr("navAbout")}</a>
@@ -1833,15 +1838,27 @@ function momoProvider(method) {
 
 function renderOrderTimeline(order, tr) {
   const status = order.status || "pending";
-  const order_steps = [
-    { key: "placed",     label: tr("timelinePlaced"),    icon: "✅" },
-    { key: "pending",    label: tr("timelinePending"),   icon: "⏳" },
-    { key: "accepted",   label: tr("timelineAccepted"),  icon: "👋" },
-    { key: "assigned",   label: tr("timelineAssigned"),  icon: "📦" },
-    { key: "ready",      label: tr("timelineReady"),     icon: "🛍️" },
-    { key: "completed",  label: tr("timelineCompleted"), icon: "🎉" },
-  ];
-  const order_index = { placed: 0, pending: 1, accepted: 2, assigned: 3, ready: 4, completed: 5 };
+  const isDelivery = order.fulfillmentType === "delivery";
+  const order_steps = isDelivery
+    ? [
+        { key: "placed",      label: tr("timelinePlaced"),      icon: "✅" },
+        { key: "pending",     label: tr("timelinePending"),      icon: "⏳" },
+        { key: "accepted",    label: tr("timelineAccepted"),     icon: "👋" },
+        { key: "assigned",    label: tr("timelineAssigned"),     icon: "📦" },
+        { key: "out",         label: tr("timelineOutForDelivery") || "Out for delivery", icon: "🛵" },
+        { key: "completed",   label: tr("timelineDelivered") || "Delivered", icon: "🏠" },
+      ]
+    : [
+        { key: "placed",     label: tr("timelinePlaced"),    icon: "✅" },
+        { key: "pending",    label: tr("timelinePending"),   icon: "⏳" },
+        { key: "accepted",   label: tr("timelineAccepted"),  icon: "👋" },
+        { key: "assigned",   label: tr("timelineAssigned"),  icon: "📦" },
+        { key: "ready",      label: tr("timelineReady"),     icon: "🛍️" },
+        { key: "completed",  label: tr("timelineCompleted"), icon: "🎉" },
+      ];
+  const order_index = isDelivery
+    ? { placed: 0, pending: 1, accepted: 2, assigned: 3, out: 4, completed: 5 }
+    : { placed: 0, pending: 1, accepted: 2, assigned: 3, ready: 4, completed: 5 };
   const currentIdx = order_index[status] ?? 1;
   return `
     <ul class="order-timeline" aria-label="${tr("timelineHeading")}">
@@ -2798,16 +2815,26 @@ function renderAccountView(state, cartSummary, tr) {
                               <div class="summary-card history-card">
                                 <div class="summary-card__row">
                                   <span>
-                                    ${escapeHtml(order.reference)}
+                                    <strong>${escapeHtml(order.reference)}</strong>
                                     <br />
-                                    <span class="muted">${new Date(order.createdAt).toLocaleString()} • ${escapeHtml(order.status || "pending")}</span>
+                                    <span class="muted">${new Date(order.createdAt).toLocaleString()}</span>
                                   </span>
                                   <strong>${formatPrice(order.totals?.total || 0)}</strong>
                                 </div>
                                 <div class="summary-card__row">
-                                  <span>${escapeHtml(order.pickupBranch?.name || "-")}</span>
-                                  <strong>${escapeHtml(order.pickupTime || "-")}</strong>
+                                  <span>
+                                    ${order.fulfillmentType === "delivery"
+                                      ? `🛵 ${tr("deliveryModeHome")} — ${escapeHtml(order.deliveryZone?.name || "Kigali")}`
+                                      : `🏪 ${escapeHtml(order.pickupBranch?.name || "-")}`
+                                    }
+                                  </span>
+                                  <strong class="order-status-pill order-status-pill--${escapeHtml(order.status || "pending")}">${escapeHtml(order.status || "pending")}</strong>
                                 </div>
+                                ${renderOrderTimeline(order, tr)}
+                                ${order.nextDeliveryDate && order.recurringOption !== "none"
+                                  ? `<div class="recurring-next-badge">🔄 ${tr("recurringOrder")}: next ${new Date(order.nextDeliveryDate).toLocaleDateString()}</div>`
+                                  : ""
+                                }
                                 <div class="order-history-items">
                                   ${(order.items || [])
                                     .map((item) => {
@@ -2817,7 +2844,7 @@ function renderAccountView(state, cartSummary, tr) {
                                       return `
                                       <div class="summary-card__row">
                                         <span>${escapeHtml(item.name)} x${qty}</span>
-                                        <strong>${formatPrice(unitPrice)} (${tr("priceLabel")})</strong>
+                                        <strong>${formatPrice(unitPrice)}</strong>
                                       </div>
                                       `;
                                     })
@@ -3747,6 +3774,66 @@ function renderAdminUsersTab(state, careUsers, tr) {
         }
       </article>
     </div>
+  `;
+}
+
+function renderPromotionsView(state, tr) {
+  const deals = getActiveDeals(state);
+  const lang = state.language || "en";
+  const labels = {
+    en: { title: "Today's Deals", lead: "Limited-time offers — grab them before the timer runs out.", cta: "Shop deals", days: "d", hours: "h", minutes: "m", seconds: "s", endsIn: "Ends in", was: "Was", save: "Save", off: "OFF" },
+    fr: { title: "Offres du jour", lead: "Offres à durée limitée — saisissez-les avant qu'il soit trop tard.", cta: "Voir les offres", days: "j", hours: "h", minutes: "m", seconds: "s", endsIn: "Expire dans", was: "Avant", save: "Économie", off: "REMISE" },
+    rw: { title: "Amanishuriro y'uyu munsi", lead: "Ibiranguzo by'igihe gipfuye — bifate mbere y'uko birangira.", cta: "Reba amanishuriro", days: "i", hours: "s", minutes: "n", seconds: "sg", endsIn: "Irangira mu", was: "Mbere", save: "Kigabanyijwe", off: "IGABANYIJWE" },
+  }[lang] || { title: "Promotions", lead: "", cta: "Shop", days: "d", hours: "h", minutes: "m", seconds: "s", endsIn: "Ends in", was: "Was", save: "Save", off: "%" };
+
+  return `
+    <main class="promotions-layout">
+      <div class="page-header">
+        <h1>${tr("promotionsPageTitle")}</h1>
+        <p class="muted">${tr("promotionsPageLead")}</p>
+      </div>
+      ${deals.length === 0
+        ? `<div class="empty-state" style="margin-top:2rem">${tr("promotionsEmpty")}</div>`
+        : `<div class="promotions-grid">${deals.map((deal) => renderDealCard(deal, labels, state, tr)).join("")}</div>`
+      }
+    </main>
+  `;
+}
+
+function renderWishlistPage(state, cartSummary, tr) {
+  const wishlist = state.wishlist || [];
+  const wishlistProducts = wishlist
+    .map((id) => (state.products || []).find((p) => Number(p.id) === Number(id)))
+    .filter(Boolean);
+
+  return `
+    <main class="wishlist-page">
+      <div class="page-header">
+        <h1>${tr("wishlistPageTitle")}</h1>
+        <p class="muted">${tr("wishlistPageLead")}</p>
+      </div>
+      ${wishlistProducts.length === 0
+        ? `<div class="empty-state" style="margin-top:2rem">${tr("wishlistEmpty") || "Your wishlist is empty."}</div>`
+        : `<div class="wishlist-page-grid">
+            ${wishlistProducts.map((product) => `
+              <article class="product-card" style="position:relative">
+                ${renderHeartButton(product.id, state, { variant: "solid" })}
+                <a class="product-card__media-link" href="#/product/${product.id}">
+                  ${renderProductImage(product)}
+                </a>
+                <div class="product-card__body">
+                  <h3 class="product-card__name">${escapeHtml(product.name)}</h3>
+                  <p class="product-card__price">${formatPrice(product.price)}</p>
+                  ${state.isAuthenticated
+                    ? `<button class="button button--primary button--sm add-to-cart" data-product-id="${product.id}">${tr("moveToCart")}</button>`
+                    : `<a class="button button--primary button--sm" href="#/auth/signin">${tr("navSignIn")}</a>`
+                  }
+                </div>
+              </article>
+            `).join("")}
+          </div>`
+      }
+    </main>
   `;
 }
 
@@ -4684,8 +4771,14 @@ function bindEvents(currentRoute) {
     const fullName = form.get("fullName");
     const phone = form.get("phone");
     const district = form.get("district");
+    const fulfillmentType = checkoutDeliveryMode === "home" ? "delivery" : "pickup";
+    const isHomeDelivery = fulfillmentType === "delivery";
     const branchId = Number(form.get("branchId"));
     const pickupTime = String(form.get("pickupTime") || "").trim();
+    const deliveryZoneId = String(form.get("deliveryZoneId") || "").trim();
+    const deliveryStreet = String(form.get("deliveryStreet") || "").trim();
+    const deliveryTimeSlot = String(form.get("deliveryTimeSlot") || "").trim();
+    const recurringOption = String(form.get("recurringOption") || "none");
     const address = form.get("address");
     const paymentMethod = String(form.get("paymentMethod") || "mtn_momo");
     const momoNumber = String(form.get("momoNumber") || "").trim();
@@ -4694,12 +4787,16 @@ function bindEvents(currentRoute) {
       alert(t(lang, "checkoutCustomerDetailsRequired"));
       return;
     }
-    if (!branchId) {
+    if (!isHomeDelivery && !branchId) {
       alert(t(lang, "checkoutBranchRequired"));
       return;
     }
-    if (!pickupTime) {
+    if (!isHomeDelivery && !pickupTime) {
       alert(t(lang, "checkoutPickupTimeRequired"));
+      return;
+    }
+    if (isHomeDelivery && !deliveryZoneId) {
+      alert(t(lang, "deliveryZone") + " is required");
       return;
     }
     if (isMomoMethod(paymentMethod) && !momoNumber) {
@@ -4707,6 +4804,9 @@ function bindEvents(currentRoute) {
       return;
     }
 
+    const zone = KIGALI_DELIVERY_ZONES.find((z) => z.id === deliveryZoneId);
+    const deliveryFee = zone ? zone.fee : 0;
+    const effectiveTotal = isHomeDelivery ? cartSummary.subtotal + deliveryFee : cartSummary.total;
     const depositAmount = Number(state.currentUser?.noShowFlags || 0) >= 2 ? PICKUP_DEPOSIT_RWF * 2 : PICKUP_DEPOSIT_RWF;
 
     // Mobile Money: show STK push processing modal before placing the order.
@@ -4716,7 +4816,7 @@ function bindEvents(currentRoute) {
         momoResult = await runMomoSimulation({
           provider: momoProvider(paymentMethod),
           phone: momoNumber,
-          amount: cartSummary.total,
+          amount: effectiveTotal,
         });
       } catch (_) {
         momoProcessingState = null;
@@ -4728,8 +4828,13 @@ function bindEvents(currentRoute) {
       fullName,
       phone,
       district,
-      branchId,
-      pickupTime,
+      fulfillmentType,
+      branchId: isHomeDelivery ? (SIMBA_BRANCHES[0]?.id || 1) : branchId,
+      pickupTime: isHomeDelivery ? "" : pickupTime,
+      deliveryZoneId,
+      deliveryStreet,
+      deliveryTimeSlot,
+      recurringOption,
       depositAmount,
       paymentMethod,
       momoNumber,
@@ -4750,8 +4855,9 @@ function bindEvents(currentRoute) {
       })),
       totals: {
         subtotal: cartSummary.subtotal,
-        deposit: cartSummary.deposit,
-        total: cartSummary.total,
+        deposit: isHomeDelivery ? 0 : cartSummary.deposit,
+        deliveryFee,
+        total: effectiveTotal,
       },
     });
 

@@ -451,21 +451,36 @@ export async function updateUserLocation(payload) {
   };
 }
 
+function calcNextDelivery(recurringOption) {
+  if (!recurringOption || recurringOption === "none") return null;
+  const d = new Date();
+  if (recurringOption === "weekly") d.setDate(d.getDate() + 7);
+  else if (recurringOption === "biweekly") d.setDate(d.getDate() + 14);
+  else if (recurringOption === "monthly") d.setMonth(d.getMonth() + 1);
+  else return null;
+  return d.toISOString();
+}
+
 export async function createOrder(payload) {
   const orders = readStorage(STORAGE_KEYS.orders, []);
   const users = ensureUsers();
   const products = ensureProducts();
-  const branchId = Number(payload.branchId);
+  const fulfillmentType = String(payload.fulfillmentType || "pickup");
+  const isHomeDelivery = fulfillmentType === "delivery";
+  const branchId = isHomeDelivery ? (SIMBA_BRANCHES[0]?.id || 1) : Number(payload.branchId);
   const pickupBranch = SIMBA_BRANCHES.find((branch) => branch.id === branchId);
 
-  if (!pickupBranch) {
+  if (!isHomeDelivery && !pickupBranch) {
     return { ok: false, code: "branchRequired" };
   }
-  if (!String(payload.pickupTime || "").trim()) {
+  if (!isHomeDelivery && !String(payload.pickupTime || "").trim()) {
     return { ok: false, code: "pickupTimeRequired" };
   }
   if (!String(payload.phone || "").trim()) {
     return { ok: false, code: "phoneRequired" };
+  }
+  if (isHomeDelivery && !payload.deliveryZoneId) {
+    return { ok: false, code: "deliveryZoneRequired" };
   }
 
   const customerEmail = String(payload.customerEmail || "").trim().toLowerCase();
@@ -486,27 +501,46 @@ export async function createOrder(payload) {
 
   for (const item of payload.items || []) {
     const product = products.find((entry) => Number(entry.id) === Number(item.productId));
-    const branchQty = Number(product?.branchStock?.[branchId] || 0);
-    if (!product || branchQty < Number(item.quantity || 0)) {
-      return { ok: false, code: "branchStockUnavailable" };
+    if (!product) return { ok: false, code: "branchStockUnavailable" };
+    if (!isHomeDelivery) {
+      const branchQty = Number(product?.branchStock?.[branchId] || 0);
+      if (branchQty < Number(item.quantity || 0)) {
+        return { ok: false, code: "branchStockUnavailable" };
+      }
     }
   }
 
+  const deliveryZone = isHomeDelivery
+    ? KIGALI_DELIVERY_ZONES.find((z) => z.id === payload.deliveryZoneId) || null
+    : null;
+  const deliveryFee = deliveryZone ? deliveryZone.fee : 0;
+  const recurringOption = String(payload.recurringOption || "none");
+  const nextDeliveryDate = calcNextDelivery(recurringOption);
+
   const now = new Date().toISOString();
+  const orderNote = isHomeDelivery
+    ? `Home delivery order to ${deliveryZone?.name || "Kigali"}.`
+    : `Pickup order created for ${pickupBranch?.name || "branch"}.`;
   const order = {
     id: Date.now(),
     reference: createReference("SIMBA"),
     paymentReference: createReference("DEP"),
-    fulfillmentType: "pickup",
-    pickupBranch,
-    pickupTime: String(payload.pickupTime).trim(),
+    fulfillmentType,
+    pickupBranch: isHomeDelivery ? null : pickupBranch,
+    pickupTime: isHomeDelivery ? null : String(payload.pickupTime || "").trim(),
+    deliveryZone: deliveryZone || null,
+    deliveryStreet: String(payload.deliveryStreet || "").trim(),
+    deliveryTimeSlot: String(payload.deliveryTimeSlot || "").trim(),
+    deliveryFee,
+    recurringOption,
+    nextDeliveryDate,
     paymentMethod: normalizedMethod,
     paymentStatus: isMomoMethod ? "deposit_confirmed" : (normalizedMethod === "card" ? "deposit_authorized" : "deposit_pending"),
     paymentTimeline: [
       {
         label: "created",
         at: now,
-        note: `Pickup order created for ${pickupBranch.name}.`,
+        note: orderNote,
       },
       {
         label: "deposit",
@@ -515,6 +549,8 @@ export async function createOrder(payload) {
           ? `${momoProviderLabel} payment of ${requiredDeposit} RWF confirmed${payload.momoTxnReference ? ` (ref ${payload.momoTxnReference})` : ""}.`
           : normalizedMethod === "card"
           ? `Card deposit authorization simulated for ${requiredDeposit} RWF.`
+          : isHomeDelivery
+          ? `Pay ${requiredDeposit} RWF on delivery.`
           : `Pay ${requiredDeposit} RWF in cash at branch pickup.`,
       },
     ],
