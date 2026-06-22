@@ -248,6 +248,7 @@ export function initializeStore(payload) {
   seedLegacyNotificationFeed();
   recordRemovedProductNotifications(previousSnapshot, state.products);
   syncProductSnapshot(state.products);
+  seedDemoCustomerOrders();
   state.store = payload.store;
   document.body.dataset.theme = state.theme;
   // Auto-detect browser language on first visit (only if user hasn't picked one)
@@ -422,6 +423,61 @@ export function seedDemoBranchOrders(branchId) {
   state.orders = [...seedOrders, ...existing];
   persist(STORAGE_KEYS.orders, state.orders);
   emit();
+}
+
+export function seedDemoCustomerOrders() {
+  const DEMO_EMAIL = "demo@simba.rw";
+  const alreadySeeded = (state.orders || []).some((o) => String(o.customer?.email || "").toLowerCase() === DEMO_EMAIL);
+  if (alreadySeeded) return;
+  const products = (state.products || []).filter((p) => p.inStock !== false).slice(0, 60);
+  if (!products.length) return;
+  const pick = (n) => {
+    const out = [];
+    const used = new Set();
+    while (out.length < n && out.length < products.length) {
+      const idx = Math.floor(Math.random() * products.length);
+      if (used.has(idx)) continue;
+      used.add(idx);
+      out.push(products[idx]);
+    }
+    return out;
+  };
+  const totals = (items) => {
+    const sub = items.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
+    return { subtotal: sub, savings: 0, deposit: 0, vat: Math.round(sub * 0.18), total: Math.round(sub * 1.18), count: items.reduce((s, i) => s + i.quantity, 0) };
+  };
+  const branch = SIMBA_BRANCHES[0];
+  const customer = { fullName: "Demo Shopper", phone: "+250788000001", email: DEMO_EMAIL, address: "KG 9 Ave, Remera, Kigali" };
+  const now = Date.now();
+  const demoOrders = [
+    { daysAgo: 0, status: "completed", paymentMethod: "cash", items: pick(3) },
+    { daysAgo: 3, status: "completed", paymentMethod: "momo", items: pick(2) },
+    { daysAgo: 8, status: "completed", paymentMethod: "cash", items: pick(4) },
+  ].map(({ daysAgo, status, paymentMethod, items }, i) => {
+    const mappedItems = items.map((p) => ({
+      productId: p.id, name: p.name, quantity: 1 + (i % 2), unitPrice: Number(p.price || 0), branchId: branch.id,
+    }));
+    const t = totals(mappedItems);
+    const createdAt = new Date(now - daysAgo * 86_400_000).toISOString();
+    return {
+      id: now + i + 9000,
+      reference: `SIMBA-DEMO${String(i + 1).padStart(2, "0")}`,
+      paymentReference: `CASH-DEMO-${String(i + 1).padStart(4, "0")}`,
+      fulfillmentType: "pickup",
+      pickupBranch: branch,
+      paymentMethod,
+      paymentStatus: "paid",
+      status,
+      customer,
+      items: mappedItems,
+      totals: t,
+      createdAt,
+      completedAt: status === "completed" ? createdAt : "",
+    };
+  });
+  const existing = Array.isArray(state.orders) ? state.orders : [];
+  state.orders = [...demoOrders, ...existing];
+  persist(STORAGE_KEYS.orders, state.orders);
 }
 
 export function setSearch(value) {
@@ -802,6 +858,9 @@ export async function loginAccount(payload) {
   state.users = result.users;
   state.currentUser = result.user;
   state.isAuthenticated = true;
+  if (result.user?.role === "customer") {
+    seedDemoCustomerOrders();
+  }
   emit();
   return true;
 }

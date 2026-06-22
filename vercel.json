@@ -1,7 +1,7 @@
 {
   "rewrites": [
     { "source": "/api/ai-search", "destination": "/api/ai-search.js" },
-    { "source": "/((?!api/|src/|styles/|assets/).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|src/|styles/|assets/|manifest\\.json|favicon\\.).*)", "destination": "/index.html" }
   ],
   "headers": [
     {

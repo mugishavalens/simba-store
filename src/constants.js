@@ -98,6 +98,14 @@ export const PICKUP_TIMES = [
   "17:00 - 18:00", "18:00 - 19:00",
 ];
 
+export const DEMO_CUSTOMER = {
+  id: 10,
+  fullName: "Demo Shopper",
+  email: "demo@simba.rw",
+  role: "customer",
+  password: "SimbaDemo@2026",
+};
+
 export const DEFAULT_ADMIN = {
   id: 1,
   fullName: "Simba Admin",

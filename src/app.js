@@ -831,7 +831,7 @@ function renderDealCard(deal, labels, state, tr) {
         </div>
         <div class="deal-card__actions">
           <a class="button button--ghost button--sm" href="#/product/${product.id}">${tr("details")}</a>
-          ${state.isAuthenticated ? `<button class="button button--primary button--sm add-to-cart" data-product-id="${product.id}">${tr("addToCart")}</button>` : `<a class="button button--primary button--sm" href="#/auth/signin">${tr("navSignIn")}</a>`}
+          <button class="button button--primary button--sm add-to-cart" data-product-id="${product.id}">${tr("addToCart")}</button>
         </div>
       </div>
     </article>
@@ -974,7 +974,7 @@ function renderWishlistCard(product, labels, state, tr) {
         </div>
         <div class="wishlist-card__actions">
           <a class="button button--ghost button--sm" href="#/product/${product.id}">${tr("details")}</a>
-          ${state.isAuthenticated ? `<button class="button button--primary button--sm add-to-cart" data-product-id="${product.id}">${tr("addToCart")}</button>` : `<a class="button button--primary button--sm" href="#/auth/signin">${tr("navSignIn")}</a>`}
+          <button class="button button--primary button--sm add-to-cart" data-product-id="${product.id}">${tr("addToCart")}</button>
         </div>
       </div>
     </article>
@@ -1338,7 +1338,7 @@ function renderProductCard(product, tr) {
         }
         <div class="product-card__actions">
           <button class="button button--ghost button--sm quickview-btn" type="button" data-quickview-id="${product.id}" aria-label="${tr("quickView")}">👁 ${tr("quickView")}</button>
-          ${state.isAuthenticated ? `<button class="button button--primary button--sm add-to-cart" data-product-id="${product.id}">${tr("addToCart")}</button>` : `<a class="button button--primary button--sm" href="#/auth/signin">${tr("navSignIn")}</a>`}
+          <button class="button button--primary button--sm add-to-cart" data-product-id="${product.id}">${tr("addToCart")}</button>
         </div>
       </div>
     </article>
@@ -1921,7 +1921,7 @@ function renderAssistantWidget(state, tr, currentRoute) {
   if (currentRoute.name === "admin" || currentRoute.name === "care") return "";
 
   const isLoggedIn = state.isAuthenticated && state.currentUser?.role === "customer";
-  const messages = isLoggedIn && Array.isArray(state.assistantMessages) ? state.assistantMessages : [];
+  const messages = Array.isArray(state.assistantMessages) ? state.assistantMessages : [];
   const visibleMessages = messages.slice(-8);
   const positionStyle = assistantPosition
     ? `style="left:${assistantPosition.x}px;top:${assistantPosition.y}px;right:auto;bottom:auto"`
@@ -1939,13 +1939,13 @@ function renderAssistantWidget(state, tr, currentRoute) {
                   <p>${tr("assistantLead")}</p>
                 </div>
                 <div style="display:flex;gap:0.4rem;align-items:center">
-                  ${isLoggedIn ? `<button class="button button--ghost button--sm" id="assistant-clear" type="button">🗑</button>` : ""}
+                  ${messages.length ? `<button class="button button--ghost button--sm" id="assistant-clear" type="button">🗑</button>` : ""}
                   <button class="button button--ghost button--sm" id="assistant-close" type="button">${tr("close")}</button>
                 </div>
               </div>
               <div class="assistant-panel__messages">
                 ${
-                  isLoggedIn
+                  visibleMessages.length
                     ? visibleMessages.map((message) => `
                         <article class="assistant-bubble assistant-bubble--${escapeHtml(message.role || "assistant")}">
                           <strong>${message.role === "user" ? tr("assistantYou") : tr("assistantTitle")}</strong>
@@ -1960,20 +1960,16 @@ function renderAssistantWidget(state, tr, currentRoute) {
                               : ""
                           }
                         </article>`).join("")
-                    : `<div class="assistant-signin-prompt">
-                        <p>&#128274; ${tr("navSignIn")} to use the shop assistant.</p>
-                        <a class="button button--primary button--sm" href="#/auth/signin">${tr("navSignIn")}</a>
-                      </div>`
+                    : `<article class="assistant-bubble assistant-bubble--assistant">
+                        <strong>${tr("assistantTitle")}</strong>
+                        <p>Hello! Ask me to find products, check prices, or answer questions about Simba Supermarket. ${isLoggedIn ? "" : '<a href="#/auth/signin">Sign in</a> to add items to your cart.'}</p>
+                      </article>`
                 }
               </div>
-              ${
-                isLoggedIn
-                  ? `<form id="assistant-form" class="assistant-form">
-                      <input id="assistant-input" name="message" value="${escapeHtml(assistantInputState)}" placeholder="${tr("assistantPlaceholder")}" autocomplete="off" required />
-                      <button class="button button--accent" type="submit">${assistantPending ? tr("assistantThinking") : tr("assistantSend")}</button>
-                    </form>`
-                  : ""
-              }
+              <form id="assistant-form" class="assistant-form">
+                <input id="assistant-input" name="message" value="${escapeHtml(assistantInputState)}" placeholder="${tr("assistantPlaceholder")}" autocomplete="off" required />
+                <button class="button button--accent" type="submit">${assistantPending ? tr("assistantThinking") : tr("assistantSend")}</button>
+              </form>
             </section>
           `
           : ""
@@ -4339,7 +4335,7 @@ function renderCart(state, cartSummary, tr) {
   const isDelivery = true; // show warning proactively since user may choose delivery
   const checkoutAction = state.isAuthenticated && state.currentUser?.role === "customer"
     ? `<a class="button button--primary ${belowMin ? "button--disabled" : ""}" href="${belowMin ? "#" : "#/checkout"}" ${belowMin ? 'aria-disabled="true"' : ""}>${tr("goCheckout")}</a>`
-    : `<a class="button button--primary" href="#/auth/signin" data-checkout-signin>${tr("navSignIn")}</a>`;
+    : `<a class="button button--primary" href="#/auth/signin" data-checkout-signin>🔐 Sign In to Checkout</a>`;
   const savedItems = (Array.isArray(state.saveForLater) ? state.saveForLater : [])
     .map((sfl) => ({ sfl, product: (state.products || []).find((p) => Number(p.id) === Number(sfl.productId)) }))
     .filter((x) => x.product);

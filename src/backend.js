@@ -2,6 +2,7 @@ import {
   DEFAULT_ADMIN,
   DEFAULT_CUSTOMER_CARE,
   DEMO_BRANCH_USERS,
+  DEMO_CUSTOMER,
   GOOGLE_CLIENT_ID,
   KIGALI_DELIVERY_ZONES,
   PICKUP_DEPOSIT_RWF,
@@ -41,7 +42,7 @@ function publicUser(user) {
 }
 
 function seedUsers(users) {
-  const seeded = [DEFAULT_ADMIN, DEFAULT_CUSTOMER_CARE, ...DEMO_BRANCH_USERS].map((user) => ({
+  const seeded = [DEFAULT_ADMIN, DEFAULT_CUSTOMER_CARE, ...DEMO_BRANCH_USERS, DEMO_CUSTOMER].map((user) => ({
     ...user,
     email: String(user.email || "").toLowerCase(),
     createdAt: user.createdAt || new Date().toISOString(),
