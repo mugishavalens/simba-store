@@ -4,6 +4,7 @@ import {
   GOOGLE_CLIENT_ID,
   KIGALI_DELIVERY_ZONES,
   LANGUAGES,
+  MIN_ORDER_RWF,
   PAYMENT_METHODS,
   PICKUP_DEPOSIT_RWF,
   PICKUP_TIMES,
@@ -42,6 +43,9 @@ import {
   removeFromWishlist,
   clearWishlist,
   isInWishlist,
+  moveToSaveForLater,
+  moveFromSaveForLaterToCart,
+  removeFromSaveForLater,
   saveProduct,
   savePromotion,
   saveSupplier,
@@ -56,6 +60,7 @@ import {
   setLanguage,
   setSearch,
   setSearchDisplay,
+  setSearchBoth,
   setTheme,
   signOut,
   subscribe,
@@ -74,7 +79,7 @@ import {
   updateQuantity,
 } from "./store.js";
 import { DEFAULT_MIN_STOCK, EXPIRY_ALERT_DAYS, VAT_RATE } from "./constants.js";
-import { applyFilters, formatBranchAvailability, formatBranchAvailabilityDetailed, formatPrice, getActivePromotion, getCategories, getEffectivePrice, route, searchProducts, summarizeCart } from "./utils.js";
+import { applyFilters, formatBranchAvailability, formatBranchAvailabilityDetailed, formatPrice, getActivePromotion, getCategories, getEffectivePrice, route, searchProducts, summarizeCart, validateRwandanPhone } from "./utils.js";
 import { translateCategory } from "./i18n.js";
 
 const BRAND_LOGO = "./assets/simba-logo.jpg";
@@ -283,10 +288,42 @@ let assistantOpen = false;
 let assistantInputState = "";
 let assistantPending = false;
 let checkoutPaymentMethodState = "mtn_momo";
+let quickViewProductId = null;
+let shareCopiedProductId = null;
 
 // Mobile money STK push simulation modal state.
 // shape: { provider: "mtn"|"airtel", phone, amount, step: 0|1|2|3 }
 let momoProcessingState = null;
+
+function clientNlSearch(query) {
+  const q = query.toLowerCase();
+  const strip = (s) => s.replace(/\b(i want|show me|find|looking for|give me|something for|things for|je veux|cherche|ndashaka|mbona)\b/g, " ").trim();
+  const cleaned = strip(q);
+  const rules = [
+    { terms: ["breakfast","ifunguro","cereal","oatmeal","porridge","toast"], st: "bread milk cereal oatmeal", cat: "Food Products" },
+    { terms: ["lunch","dejeuner","amafunguro","pasta","lentil"], st: "rice beans pasta lunch", cat: "Food Products" },
+    { terms: ["dinner","souper","diner"], st: "rice chicken meat dinner", cat: "Food Products" },
+    { terms: ["snack","gouter","chips","biscuit","crisps","cracker"], st: "biscuits crisps snacks", cat: "Food Products" },
+    { terms: ["beer","biere","inzoga","miitzig","amstel","heineken","corona","primus","turbo"], st: "miitzig amstel heineken beer primus", cat: "Alcoholic Drinks" },
+    { terms: ["wine","vin","sparkling","chamdor","champagne"], st: "wine sparkling chamdor", cat: "Alcoholic Drinks" },
+    { terms: ["whisky","whiskey","scotch","vodka","cognac","rum","gin","spirit","alcohol","alcool"], st: "whisky vodka gin rum cognac", cat: "Alcoholic Drinks" },
+    { terms: ["milk","lait","amata","dairy","yogurt","cheese","butter"], st: "milk yogurt butter dairy", cat: "Food Products" },
+    { terms: ["baby","bebe","umwana","diapers","pampers","wipes","lactogen","infant","formula"], st: "lactogen diapers wipes baby formula", cat: "Baby Products" },
+    { terms: ["clean","nettoy","gusan","detergent","bleach","toilet paper","disinfect","sanitiz","laundry"], st: "detergent bleach cleaner soap", cat: "Cleaning & Sanitary" },
+    { terms: ["shampoo","conditioner","lotion","cream","perfume","deodor","makeup","skincare","beauty","cosmetic","hair"], st: "shampoo lotion cream cosmetics", cat: "Cosmetics & Personal Care" },
+    { terms: ["pot","pan","kettle","iron","cookware","applian","kitchen","cup","mug"], st: "pots pans cookware kitchen", cat: "Kitchenware & Electronics" },
+    { terms: ["sport","fitness","gym","wellness","exercise"], st: "sports fitness wellness", cat: "Sports & Wellness" },
+    { terms: ["pet","dog","cat","animal","bird"], st: "pet food animal", cat: "Pet Care" },
+    { terms: ["water","juice","soda","soft drink","drink","beverage","amazi"], st: "water juice soda drink", cat: "Food Products" },
+    { terms: ["flour","sugar","grain","cooking oil","huile","sel","salt","staple"], st: "flour sugar rice oil cooking", cat: "General" },
+  ];
+  for (const rule of rules) {
+    if (rule.terms.some((t) => new RegExp(t).test(cleaned))) {
+      return { searchTerm: rule.st, category: rule.cat };
+    }
+  }
+  return { searchTerm: cleaned || query, category: "all" };
+}
 
 // Live toast (auto-dismiss). { type, message, id }
 let liveToast = null;
@@ -455,6 +492,12 @@ function render() {
     view = renderPromotionsView(state, tr);
   } else if (currentRoute.name === "wishlist") {
     view = renderWishlistPage(state, cartSummary, tr);
+  } else if (currentRoute.name === "about") {
+    view = renderAboutPage(state, tr);
+  } else if (currentRoute.name === "branches") {
+    view = renderBranchesPage(state, tr);
+  } else if (currentRoute.name === "faq") {
+    view = renderFAQPage(state, tr);
   } else {
     view = renderHomeView(state, categories, filteredProducts, cartSummary, tr);
   }
@@ -462,6 +505,7 @@ function render() {
   app.innerHTML = `
     ${renderTopbar(state, cartSummary, categories, tr, currentRoute)}
     ${view}
+    ${quickViewProductId ? renderQuickViewModal(state, quickViewProductId, tr) : ""}
     ${renderAssistantWidget(state, tr, currentRoute)}
     ${state.cartOpen ? `<div class="cart-overlay" id="cart-overlay"></div>` : ""}
     ${state.cartOpen ? renderCart(state, cartSummary, tr) : ""}
@@ -557,10 +601,10 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
                 ? `<a class="main-nav__link" href="#/branch">${BRANCH_OPS_LABELS[state.language]?.nav || BRANCH_OPS_LABELS.en.nav}</a>`
                 : `
                   <a class="main-nav__link nav-deals-link" href="#/promotions">🔥 ${tr("navDeals") || "Deals"}</a>
-                  <a class="main-nav__link" href="#branches">${tr("navBranches")}</a>
+                  <a class="main-nav__link" href="#/branches">${tr("navBranches")}</a>
                   <a class="main-nav__link" href="#support">${tr("navSupport")}</a>
-                  <a class="main-nav__link" href="#about">${tr("navAbout")}</a>
-                  <a class="main-nav__link" href="#vision">${tr("navVision")}</a>
+                  <a class="main-nav__link" href="#/about">${tr("navAbout")}</a>
+                  <a class="main-nav__link" href="#/faq">FAQ</a>
                 `
           }
         </nav>
@@ -659,9 +703,12 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
           ? ""
           : `<div class="discover-panel">
               <div class="discover-row">
-                <label class="searchbar searchbar--inline">
-                  <span class="searchbar__icon">&#8981;</span>
-                  <input id="search-input" value="${escapeHtml(state.searchDisplay)}" placeholder="${tr("searchPlaceholder")}" />
+                <label class="searchbar searchbar--inline${state.searchDisplay ? " searchbar--has-value" : ""}">
+                  <span class="searchbar__icon" aria-hidden="true">&#8981;</span>
+                  <input id="search-input" value="${escapeHtml(state.searchDisplay)}" autocomplete="off" spellcheck="false"
+                    placeholder="${tr("searchPlaceholderAI")}" />
+                  ${state.searchDisplay ? `<button type="button" class="searchbar__clear" id="search-clear-btn" aria-label="Clear search">&#10005;</button>` : ""}
+                  <span class="searchbar__ai-badge" aria-hidden="true">AI</span>
                 </label>
                 <div class="discover-filters">
                   <select class="select select--compact" id="category-filter">
@@ -933,7 +980,12 @@ function renderWishlistCard(product, labels, state, tr) {
 
 function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
   const topCategories = categories.slice(0, 6);
-  const featured = filteredProducts.slice(0, 18);
+  const hasActiveFilter =
+    (state.filters?.category && state.filters.category !== "all") ||
+    (state.filters?.price && state.filters.price !== "all") ||
+    (state.filters?.stock && state.filters.stock !== "all") ||
+    (state.search && state.search.trim().length > 0);
+  const featured = hasActiveFilter ? filteredProducts : filteredProducts.slice(0, 18);
   const reviewCount = (state.branchReviews || []).length;
   const averageRating = reviewCount
     ? (
@@ -1283,7 +1335,7 @@ function renderProductCard(product, tr) {
             : ""
         }
         <div class="product-card__actions">
-          <a class="button button--ghost button--sm" href="#/product/${product.id}">${tr("details")}</a>
+          <button class="button button--ghost button--sm quickview-btn" type="button" data-quickview-id="${product.id}" aria-label="${tr("quickView")}">👁 ${tr("quickView")}</button>
           ${state.isAuthenticated ? `<button class="button button--primary button--sm add-to-cart" data-product-id="${product.id}">${tr("addToCart")}</button>` : `<a class="button button--primary button--sm" href="#/auth/signin">${tr("navSignIn")}</a>`}
         </div>
       </div>
@@ -1418,6 +1470,13 @@ function renderProductView(state, productId, cartSummary, tr) {
             <h3>${tr("momoHint")}</h3>
             <p>${escapeHtml(product.name)} ${tr("demoCheckoutReady")}</p>
           </div>
+          <div class="share-row">
+            <span class="share-row__label">${tr("shareProduct")}:</span>
+            <a class="button button--ghost button--sm" href="https://wa.me/?text=${encodeURIComponent(product.name + ' — ' + formatPrice(effective) + ' — ' + location.href)}" target="_blank" rel="noreferrer">📱 WhatsApp</a>
+            <a class="button button--ghost button--sm" href="https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(location.href)}" target="_blank" rel="noreferrer">📘 Facebook</a>
+            <a class="button button--ghost button--sm" href="https://twitter.com/intent/tweet?text=${encodeURIComponent(product.name + ' — ' + formatPrice(effective))}&url=${encodeURIComponent(location.href)}" target="_blank" rel="noreferrer">🐦 X</a>
+            <button class="button button--ghost button--sm" type="button" id="share-copy-btn" data-product-id="${product.id}">${shareCopiedProductId === product.id ? tr("shareCopied") : tr("shareCopy")}</button>
+          </div>
         </div>
       </section>
 
@@ -1540,6 +1599,7 @@ function renderCheckoutView(state, cartSummary, tr) {
                 <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:1rem">
                   <a class="button button--primary" href="#/">${tr("continueShopping")}</a>
                   <a class="button button--ghost" href="#/account">${tr("trackOrder")}</a>
+                  ${lastOrder ? `<button class="button button--ghost" type="button" id="print-invoice-btn">🖨️ ${tr("printInvoice")}</button>` : ""}
                 </div>
               </div>
             `
@@ -1665,6 +1725,10 @@ function renderCheckoutView(state, cartSummary, tr) {
                   <span>${tr("notes")}</span>
                   <textarea name="notes"></textarea>
                 </label>
+                <label class="checkout-field">
+                  <span>${tr("deliveryLandmarks")}</span>
+                  <textarea name="landmarks" placeholder="${tr("deliveryLandmarksPlaceholder")}"></textarea>
+                </label>
                 <div class="checkout-location-row">
                   <button class="button button--ghost" id="checkout-locate-btn" type="button">
                     &#127759; ${customerLocationState ? `&#10003; ${nearestBranchState ? escapeHtml(nearestBranchState.name) : tr("branchesNearest")}` : tr("branchesShareLocation")}
@@ -1709,6 +1773,145 @@ function renderCheckoutView(state, cartSummary, tr) {
         <p class="notice">${tr("momoHint")}</p>
       </aside>
     </main>
+  `;
+}
+
+function renderAboutPage(state, tr) {
+  return `
+    <main>
+      <section class="section">
+        <div class="section__header">
+          <div>
+            <h2 class="section__title">${tr("aboutPageTitle")}</h2>
+            <p class="section__lead">${tr("aboutPageLead")}</p>
+          </div>
+          <span class="pill pill--green">${tr("aboutPageFounded")}</span>
+        </div>
+        <div class="about-grid">
+          <div class="about-block">
+            <h3>${tr("aboutPageHistory")}</h3>
+            <p>${tr("aboutPageHistoryText")}</p>
+          </div>
+          <div class="about-block">
+            <h3>${tr("aboutPageMission")}</h3>
+            <p>${tr("aboutPageMissionText")}</p>
+          </div>
+          <div class="about-block">
+            <h3>${tr("aboutPageContact")}</h3>
+            <ul class="about-contact-list">
+              <li>📧 <a href="mailto:${tr("aboutPageEmail")}">${tr("aboutPageEmail")}</a></li>
+              <li>📞 <a href="tel:${tr("aboutPagePhone")}">${tr("aboutPagePhone")}</a></li>
+              <li>📍 ${tr("aboutPageAddress")}</li>
+            </ul>
+          </div>
+        </div>
+        <div style="margin-top:2rem">
+          ${renderFAQAccordion(tr)}
+        </div>
+      </section>
+    </main>
+  `;
+}
+
+function renderBranchesPage(state, tr) {
+  return `
+    <main>
+      <section class="section">
+        <div class="section__header">
+          <div>
+            <h2 class="section__title">${tr("branchesPageTitle")}</h2>
+            <p class="section__lead">${tr("branchesPageLead")}</p>
+          </div>
+        </div>
+        <div class="branches-page-grid">
+          ${SIMBA_BRANCHES.map((branch) => `
+            <div class="branch-card">
+              <div class="branch-card__head">
+                <strong class="branch-card__name">${escapeHtml(branch.name)}</strong>
+              </div>
+              <p class="branch-card__address">📍 ${escapeHtml(branch.address)}</p>
+              <p class="branch-card__hours">🕐 <strong>${tr("branchHours")}:</strong> ${escapeHtml(branch.hours)}</p>
+              <p class="branch-card__phone">📞 <a href="tel:${escapeHtml(branch.phone)}">${escapeHtml(branch.phone)}</a></p>
+              <a class="button button--ghost button--sm" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(branch.name + ' ' + branch.address)}" target="_blank" rel="noreferrer">${tr("branchGetDirections")} ↗</a>
+            </div>
+          `).join("")}
+        </div>
+      </section>
+    </main>
+  `;
+}
+
+function renderFAQPage(state, tr) {
+  return `
+    <main>
+      <section class="section">
+        <div class="section__header">
+          <div>
+            <h2 class="section__title">${tr("faqPageTitle")}</h2>
+            <p class="section__lead">${tr("faqPageLead")}</p>
+          </div>
+        </div>
+        ${renderFAQAccordion(tr)}
+      </section>
+    </main>
+  `;
+}
+
+function renderFAQAccordion(tr) {
+  const items = [1,2,3,4,5,6,7,8].map((n) => ({ q: tr(`faqQ${n}`), a: tr(`faqA${n}`) }));
+  return `
+    <div class="faq-accordion">
+      ${items.map((item, i) => `
+        <div class="faq-item">
+          <button class="faq-question" type="button" aria-expanded="false" data-faq-index="${i}">
+            <span>${escapeHtml(item.q)}</span>
+            <span class="faq-icon" aria-hidden="true">+</span>
+          </button>
+          <div class="faq-answer" hidden>${escapeHtml(item.a)}</div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderQuickViewModal(state, productId, tr) {
+  const product = (state.products || []).find((p) => Number(p.id) === Number(productId));
+  if (!product) return "";
+  const promo = getActivePromotion(product.id, state.promotions || []);
+  const effectivePrice = getEffectivePrice(product, state.promotions || []);
+  const inStock = product.inStock !== false;
+  return `
+    <div class="quickview-backdrop" id="quickview-backdrop">
+      <div class="quickview-modal" role="dialog" aria-label="${escapeHtml(product.name)}">
+        <button class="quickview-close" id="quickview-close" type="button" aria-label="${tr("quickViewClose")}">&times;</button>
+        <div class="quickview-body">
+          <div class="quickview-image">
+            ${renderProductImage(product)}
+            ${promo ? `<span class="recent-card__badge">-${Number(promo.percent)}%</span>` : ""}
+          </div>
+          <div class="quickview-info">
+            <p class="recent-card__category">${renderCategoryLabel(state.language, product.category)}</p>
+            <h2 class="quickview-title">${escapeHtml(product.name)}</h2>
+            <div class="quickview-price">
+              ${promo ? `<span class="product-price--original">${formatPrice(product.price)}</span>` : ""}
+              <strong>${formatPrice(effectivePrice)}</strong>
+            </div>
+            <p class="quickview-unit muted">${tr("unit")}: ${escapeHtml(product.unit || "")}</p>
+            ${inStock
+              ? `<div class="cart-item__controls" style="margin-top:1rem">
+                  <div class="qty-control">
+                    <button class="qty-button" id="qv-dec" type="button">-</button>
+                    <span id="qv-qty">1</span>
+                    <button class="qty-button" id="qv-inc" type="button">+</button>
+                  </div>
+                  <button class="button button--primary" id="qv-add-to-cart" data-product-id="${product.id}" type="button">${tr("quickViewAddToCart")}</button>
+                </div>`
+              : `<p class="stock-badge stock-badge--out">${tr("outOfStock")}</p>`
+            }
+          </div>
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -2216,19 +2419,19 @@ function parseAssistantCartAction(rawQuery, products, cart = []) {
   if (!query) return null;
 
   const asksCartContents =
-    (/\b(cart|basket|bag)\b/.test(query) &&
-      /\b(what|show|list|tell|contents|items|have|got|in|my)\b/.test(query)) ||
     /\bwhat(?:'s| is)?\s+(?:in\s+)?(?:my\s+)?(?:cart|basket|bag)\b/.test(query) ||
-    /\bshow\s+(?:me\s+)?(?:my\s+)?(?:cart|basket|bag)\b/.test(query);
+    /\bshow\s+(?:me\s+)?(?:my\s+)?(?:cart|basket|bag)\b/.test(query) ||
+    /\blist\s+(?:my\s+)?(?:cart|basket|bag)\b/.test(query) ||
+    (/\b(cart|basket|bag)\b/.test(query) && /\b(what|show|list|contents|items)\b/.test(query) && !/\b(add|buy|get|order|put|place|remove|delete)\b/.test(query));
 
   if (asksCartContents) {
     return { action: "view" };
   }
 
-  const hasRemoveVerb = /\b(remove|delete|take out|takeout|drop)\b/.test(query);
+  const hasRemoveVerb = /\b(remove|delete|take out|takeout|drop|futa|siba)\b/.test(query);
   const hasUpdateVerb = /\b(change|update|set|modify|adjust)\b/.test(query);
-  const hasAddVerb = /\b(add|put|place|drop|send)\b/.test(query);
-  const hasCartTarget = /\b(cart|basket|bag|from|to|quantity|amount|of)\b/.test(query);
+  const hasAddVerb = /\b(add|put|place|drop|send|order|buy|get|i want|i need|i'd like|give me|ongera|shyira|gura|ndashaka)\b/.test(query);
+  const hasCartTarget = /\b(cart|basket|bag|from|to|quantity|amount|of|gatebo|panier)\b/.test(query);
   const hasQuantityKeyword = /\b(quantity|amount|to)\b/.test(query);
 
   // Handle update operations (e.g., "change milk to 5", "update bread quantity to 3")
@@ -2289,8 +2492,9 @@ function parseAssistantCartAction(rawQuery, products, cart = []) {
     return { action: "remove", product: match || null, productQuery };
   }
 
-  // Handle add operations - improved logic
-  if (hasAddVerb && hasCartTarget) {
+  // Handle add operations - improved logic (hasCartTarget optional when hasAddVerb is strong)
+  const strongAddVerb = /\b(add|order|buy|get|i want|i need|i'd like|give me|ongera|shyira|gura|ndashaka)\b/.test(query);
+  if (hasAddVerb && (hasCartTarget || strongAddVerb)) {
     const quantityMatch =
       query.match(/\b(?:add|put|place|drop|send)\s+(\d{1,2})\b/) ||
       query.match(/\b(\d{1,2})\s+(?:of|x)?\b/);
@@ -2300,8 +2504,8 @@ function parseAssistantCartAction(rawQuery, products, cart = []) {
 
     // Extract product query more carefully
     const productQuery = query
-      .replace(/\b(?:please|kindly|can you|could you|i want|i need|for me|can u|couldya|coulda)\b/g, " ")
-      .replace(/\b(?:add|put|place|drop|send|to|into|in|on|my|the|a|an|cart|basket|bag|something)\b/g, " ")
+      .replace(/\b(?:please|kindly|can you|could you|i want|i need|for me|can u|couldya|coulda|u|wanna|wanna|gimme)\b/g, " ")
+      .replace(/\b(?:add|put|place|drop|send|order|buy|get|give|to|into|in|on|my|the|a|an|cart|basket|bag|something)\b/g, " ")
       .replace(/\b\d{1,2}\b/g, " ")
       .replace(/\s+/g, " ")
       .trim();
@@ -2312,10 +2516,15 @@ function parseAssistantCartAction(rawQuery, products, cart = []) {
       return { action: "add", product: null, quantity, productQuery: "something" };
     }
 
-    const match = searchProducts(products || [], productQuery, { stock: "in" })
+    let match = searchProducts(products || [], productQuery, { stock: "in" })
       .filter((entry) => entry.score > 0)
       .map((entry) => entry.product)[0];
-
+    // try all stock if nothing in-stock found
+    if (!match) {
+      match = searchProducts(products || [], productQuery, { stock: "all" })
+        .filter((entry) => entry.score > 0)
+        .map((entry) => entry.product)[0];
+    }
     return { action: "add", product: match || null, quantity, productQuery };
   }
 
@@ -2428,19 +2637,24 @@ function buildAssistantCartReply(state, command, tr) {
   // Handle add action - both with specific product and generic "something"
   if (command?.action === "add") {
     if (!command?.product) {
-      // User said "add something" but no specific product was matched
-      const categories = getCategories(state.products || []);
-      const categoriesText = formatAssistantCategories(state.language || "en", categories.slice(0, 4));
+      // Try a broader fuzzy search using the productQuery
+      const fuzzyMatches = command.productQuery && command.productQuery.length >= 2
+        ? searchProducts(state.products || [], command.productQuery, { stock: "all" })
+            .slice(0, 3)
+            .map((e) => e.product)
+        : (state.products || []).filter((p) => p.inStock).slice(0, 3);
+
+      const suggestNames = fuzzyMatches.map((p) => p.name).join(", ");
       const text =
         language === "fr"
-          ? `Je n'ai pas identifie le produit. Vous pouvez chercher dans ces categories: ${categoriesText}.`
+          ? `Je n'ai pas trouve "${command.productQuery}" exactement. Voici des suggestions: ${suggestNames}. Dites "add [nom]" pour ajouter.`
           : language === "rw"
-          ? `Ntabishyize igikorwa. Munogereza muri ibi byiciro: ${categoriesText}.`
-          : `I couldn't identify which product. Try searching in these categories: ${categoriesText}.`;
-      
+          ? `Ntabwo nasanze "${command.productQuery}". Ibi ni ibyiza: ${suggestNames}. Vuga "add [izina]" kongera.`
+          : `I couldn't find "${command.productQuery}" exactly. Did you mean: ${suggestNames}? Say "add [name]" to add one.`;
+
       return {
         text,
-        products: state.products?.slice(0, 3) || [],
+        products: fuzzyMatches,
         cartAction: null,
         cartProductId: null,
         cartQuantity: 0,
@@ -2449,12 +2663,13 @@ function buildAssistantCartReply(state, command, tr) {
 
     const product = command.product;
     const quantity = command.quantity || 1;
+    const priceStr = formatPrice(Number(product.price));
     const text =
       language === "fr"
-        ? `${quantity} x ${product.name} a ete ajoute au panier.`
+        ? `✅ ${quantity} × ${product.name} (${priceStr}) a ete ajoute au panier.`
         : language === "rw"
-        ? `${quantity} x ${product.name} cyashyizwe mu gatebo.`
-        : `${quantity} x ${product.name} has been added to your cart.`;
+        ? `✅ ${quantity} × ${product.name} (${priceStr}) yashyizwe mu gatebo.`
+        : `✅ ${quantity} × ${product.name} (${priceStr}) added to your cart!`;
 
     return {
       text,
@@ -4118,9 +4333,14 @@ function renderAuthView(state, mode, tr) {
 }
 
 function renderCart(state, cartSummary, tr) {
+  const belowMin = cartSummary.subtotal > 0 && cartSummary.subtotal < MIN_ORDER_RWF;
+  const isDelivery = true; // show warning proactively since user may choose delivery
   const checkoutAction = state.isAuthenticated && state.currentUser?.role === "customer"
-    ? `<a class="button button--primary" href="#/checkout">${tr("goCheckout")}</a>`
+    ? `<a class="button button--primary ${belowMin ? "button--disabled" : ""}" href="${belowMin ? "#" : "#/checkout"}" ${belowMin ? 'aria-disabled="true"' : ""}>${tr("goCheckout")}</a>`
     : `<a class="button button--primary" href="#/auth/signin" data-checkout-signin>${tr("navSignIn")}</a>`;
+  const savedItems = (Array.isArray(state.saveForLater) ? state.saveForLater : [])
+    .map((sfl) => ({ sfl, product: (state.products || []).find((p) => Number(p.id) === Number(sfl.productId)) }))
+    .filter((x) => x.product);
   return `
     <aside class="cart-drawer">
       <div class="summary-card">
@@ -4131,8 +4351,14 @@ function renderCart(state, cartSummary, tr) {
         ${
           cartSummary.items.length
             ? `<div class="cart-items">${cartSummary.items.map((item) => renderCartItem(item, tr)).join("")}</div>`
-            : `<div class="empty-state"><h3>${tr("emptyCart")}</h3><p>${tr("emptyCartText")}</p></div>`
+            : `<div class="empty-state">
+                <div style="font-size:2.5rem;margin-bottom:0.5rem">🛒</div>
+                <h3>${tr("emptyCart")}</h3>
+                <p>${tr("emptyCartText")}</p>
+                <a class="button button--primary" href="#/" id="close-cart-go-shop">${tr("goToShop")}</a>
+               </div>`
         }
+        ${belowMin ? `<div class="min-order-warning">⚠️ ${tr("minOrderWarning").replace("{min}", formatPrice(MIN_ORDER_RWF)).replace("{current}", formatPrice(cartSummary.subtotal))}</div>` : ""}
         <div class="summary-card__row"><span>${tr("subtotal")}</span><strong>${formatPrice(cartSummary.subtotal)}</strong></div>
         ${cartSummary.savings ? `<div class="summary-card__row"><span>${tr("youSaved")}</span><strong class="summary-savings">- ${formatPrice(cartSummary.savings)}</strong></div>` : ""}
         <div class="summary-card__row"><span>${tr("vatIncluded")}</span><strong>${formatPrice(cartSummary.vat)}</strong></div>
@@ -4140,8 +4366,28 @@ function renderCart(state, cartSummary, tr) {
         <div class="summary-card__row summary-card__total"><span>${tr("total")}</span><strong>${formatPrice(cartSummary.total)}</strong></div>
         <div class="cart-actions">
           ${checkoutAction}
-          <button class="button button--ghost" id="clear-cart">${tr("clearCart")}</button>
+          ${cartSummary.items.length ? `<button class="button button--ghost" id="clear-cart">${tr("clearCart")}</button>` : ""}
         </div>
+        ${savedItems.length ? `
+          <div class="cart-save-for-later">
+            <h4 class="cart-upsell__title">🔖 ${tr("savedForLater")}</h4>
+            <div class="sfl-list">
+              ${savedItems.map(({ sfl, product }) => `
+                <div class="sfl-item">
+                  <div class="sfl-item__img">${renderProductImage(product)}</div>
+                  <div class="sfl-item__info">
+                    <span class="sfl-item__name">${escapeHtml(product.name)}</span>
+                    <span class="sfl-item__price">${formatPrice(getEffectivePrice(product, state.promotions || []))}</span>
+                  </div>
+                  <div class="sfl-item__actions">
+                    <button class="button button--ghost button--sm" type="button" data-sfl-move="${sfl.productId}">${tr("moveToCartFromSaved")}</button>
+                    <button class="button button--ghost button--sm sfl-remove" type="button" data-sfl-remove="${sfl.productId}">${tr("removeFromSaved")}</button>
+                  </div>
+                </div>
+              `).join("")}
+            </div>
+          </div>
+        ` : ""}
         ${(() => {
           if (!cartSummary.items.length) return "";
           const inCart = new Set(cartSummary.items.map((i) => Number(i.product.id)));
@@ -4195,6 +4441,7 @@ function renderCartItem(item, tr) {
           <button class="cart-remove" data-product-id="${item.product.id}" aria-label="${tr("removeItem")}">×</button>
         </div>
       </div>
+      <button class="button button--ghost button--sm cart-save-later-btn" type="button" data-sfl-save="${item.product.id}">${tr("saveForLater")}</button>
     </div>
   `;
 }
@@ -4336,19 +4583,40 @@ function bindEvents(currentRoute) {
   });
   if (!hasBoundGlobalEvents) {
     let lastScrollY = window.scrollY;
+    let scrollDownStart = window.scrollY;
+    let scrollUpStart = null;
     let ticking = false;
+    const HIDE_THRESHOLD = 60;
+    const SHOW_THRESHOLD = 30;
     window.addEventListener("scroll", () => {
       if (ticking) return;
       ticking = true;
       requestAnimationFrame(() => {
         const currentY = window.scrollY;
-        const isCompactHeader = window.matchMedia("(max-width: 759px)").matches;
         const searchFocused = document.activeElement?.id === "search-input";
-        const shouldHide = !isCompactHeader && !searchFocused && currentY > lastScrollY && currentY > 80;
-        if (shouldHide !== discoverPanelHidden) {
-          discoverPanelHidden = shouldHide;
-          const panel = document.querySelector(".discover-panel");
-          if (panel) panel.classList.toggle("discover-panel--scrolled", discoverPanelHidden);
+        if (!searchFocused) {
+          if (currentY > lastScrollY) {
+            if (scrollUpStart !== null) scrollUpStart = null;
+            if (!discoverPanelHidden && currentY > 60) {
+              if (scrollDownStart === null) scrollDownStart = lastScrollY;
+              if (currentY - scrollDownStart >= HIDE_THRESHOLD) {
+                discoverPanelHidden = true;
+                const panel = document.querySelector(".discover-panel");
+                if (panel) panel.classList.add("discover-panel--scrolled");
+              }
+            }
+          } else if (currentY < lastScrollY) {
+            if (scrollDownStart !== null) scrollDownStart = null;
+            if (discoverPanelHidden) {
+              if (scrollUpStart === null) scrollUpStart = lastScrollY;
+              if (scrollUpStart - currentY >= SHOW_THRESHOLD) {
+                discoverPanelHidden = false;
+                scrollUpStart = null;
+                const panel = document.querySelector(".discover-panel");
+                if (panel) panel.classList.remove("discover-panel--scrolled");
+              }
+            }
+          }
         }
         lastScrollY = currentY;
         ticking = false;
@@ -4413,25 +4681,29 @@ function bindEvents(currentRoute) {
 
       try {
         const groqKey = localStorage.getItem("simba.groq-api-key") || "";
-        const res = await fetch("/api/ai-search", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(groqKey ? { "X-Groq-Api-Key": groqKey } : {}),
-          },
-          body: JSON.stringify({ query: trimmed, apiKey: groqKey }),
-          signal: aiController.signal,
-        });
-        if (!res.ok) throw new Error("ai-search failed");
-        const data = await res.json();
+        let data = null;
+        try {
+          const res = await fetch("/api/ai-search", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(groqKey ? { "X-Groq-Api-Key": groqKey } : {}),
+            },
+            body: JSON.stringify({ query: trimmed, apiKey: groqKey }),
+            signal: aiController.signal,
+          });
+          if (res.ok) data = await res.json();
+        } catch (_fetchErr) { /* network error or non-ok — fall through to client NL */ }
+
+        if (!data || data.error) data = clientNlSearch(trimmed);
+
         const { searchTerm, category } = data;
-        setSearch(searchTerm || trimmed);
         const validCategories = getCategories(getState().products);
         if (category && category !== "all" && validCategories.includes(category)) {
           setFilter("category", category);
-          const catEl = document.querySelector("#category-filter");
-          if (catEl) catEl.value = category;
         }
+        setSearch(searchTerm || trimmed);
+        pendingCatalogScroll = true;
       } catch (err) {
         if (err.name !== "AbortError") {
           setSearch(trimmed);
@@ -4439,13 +4711,14 @@ function bindEvents(currentRoute) {
       } finally {
         const el = document.querySelector("#search-input")?.closest(".searchbar");
         if (el) el.classList.remove("search--ai-loading");
+        const catEl = document.querySelector("#category-filter");
+        if (catEl) catEl.value = getState().filters.category || "all";
       }
     }
 
     input.addEventListener("input", (event) => {
       const value = event.target.value;
-      setSearchDisplay(value);
-      setSearch(value);
+      setSearchBoth(value, value); // single render per keystroke
       clearTimeout(aiDebounceTimer);
       if (value.trim().length >= 3) {
         aiDebounceTimer = setTimeout(() => runAiSearch(value), 500);
@@ -4456,6 +4729,14 @@ function bindEvents(currentRoute) {
     });
 
     input.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        clearTimeout(aiDebounceTimer);
+        if (aiController) { aiController.abort(); aiController = null; }
+        lastAiQuery = "";
+        setSearchBoth("", "");
+        setFilter("category", "all");
+        return;
+      }
       if (event.key !== "Enter") return;
       event.preventDefault();
       const value = event.currentTarget.value;
@@ -4470,6 +4751,15 @@ function bindEvents(currentRoute) {
         location.hash = "catalog";
       }
     });
+
+    document.querySelector("#search-clear-btn")?.addEventListener("click", () => {
+      clearTimeout(aiDebounceTimer);
+      if (aiController) { aiController.abort(); aiController = null; }
+      lastAiQuery = "";
+      setSearchBoth("", "");
+      setFilter("category", "all");
+      requestAnimationFrame(() => document.querySelector("#search-input")?.focus());
+    });
   })();
   document.querySelector("#category-filter")?.addEventListener("change", (event) => {
     const category = event.target.value;
@@ -4477,9 +4767,9 @@ function bindEvents(currentRoute) {
     setSearch(getState().search || "");
     render();
   });
-  document.querySelector("#price-filter")?.addEventListener("change", (event) => setFilter("price", event.target.value));
-  document.querySelector("#stock-filter")?.addEventListener("change", (event) => setFilter("stock", event.target.value));
-  document.querySelector("#sort-filter")?.addEventListener("change", (event) => setFilter("sort", event.target.value));
+  document.querySelector("#price-filter")?.addEventListener("change", (event) => { setFilter("price", event.target.value); render(); });
+  document.querySelector("#stock-filter")?.addEventListener("change", (event) => { setFilter("stock", event.target.value); render(); });
+  document.querySelector("#sort-filter")?.addEventListener("change", (event) => { setFilter("sort", event.target.value); render(); });
   document.querySelector("#theme-toggle")?.addEventListener("click", () => {
     const nextTheme = getState().theme === "dark" ? "light" : "dark";
     setTheme(nextTheme);
@@ -4717,7 +5007,84 @@ function bindEvents(currentRoute) {
   document.querySelector("#cart-overlay")?.addEventListener("click", () => toggleCart(false));
   document.querySelector("#hero-cart")?.addEventListener("click", () => toggleCart(true));
   document.querySelector("#close-cart")?.addEventListener("click", () => toggleCart(false));
+  document.querySelector("#close-cart-go-shop")?.addEventListener("click", () => toggleCart(false));
   document.querySelector("#clear-cart")?.addEventListener("click", () => clearCart());
+
+  // Save for later
+  document.querySelectorAll("[data-sfl-save]").forEach((btn) =>
+    btn.addEventListener("click", () => moveToSaveForLater(Number(btn.dataset.sflSave)))
+  );
+  document.querySelectorAll("[data-sfl-move]").forEach((btn) =>
+    btn.addEventListener("click", () => moveFromSaveForLaterToCart(Number(btn.dataset.sflMove)))
+  );
+  document.querySelectorAll("[data-sfl-remove]").forEach((btn) =>
+    btn.addEventListener("click", () => removeFromSaveForLater(Number(btn.dataset.sflRemove)))
+  );
+
+  // Quick View
+  document.querySelectorAll(".quickview-btn").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      quickViewProductId = Number(btn.dataset.quickviewId);
+      render();
+    })
+  );
+  document.querySelector("#quickview-backdrop")?.addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) { quickViewProductId = null; render(); }
+  });
+  document.querySelector("#quickview-close")?.addEventListener("click", () => {
+    quickViewProductId = null; render();
+  });
+  (function wireQuickViewQty() {
+    let qvQty = 1;
+    document.querySelector("#qv-dec")?.addEventListener("click", () => {
+      qvQty = Math.max(1, qvQty - 1);
+      const el = document.querySelector("#qv-qty");
+      if (el) el.textContent = qvQty;
+    });
+    document.querySelector("#qv-inc")?.addEventListener("click", () => {
+      qvQty = qvQty + 1;
+      const el = document.querySelector("#qv-qty");
+      if (el) el.textContent = qvQty;
+    });
+    document.querySelector("#qv-add-to-cart")?.addEventListener("click", () => {
+      const productId = Number(document.querySelector("#qv-add-to-cart")?.dataset.productId);
+      if (!productId) return;
+      if (!getState().isAuthenticated) { location.hash = "/auth/signin"; return; }
+      addToCart(productId, qvQty);
+      quickViewProductId = null;
+      render();
+    });
+  })();
+
+  // FAQ accordion
+  document.querySelectorAll("[data-faq-index]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const expanded = btn.getAttribute("aria-expanded") === "true";
+      const answer = btn.nextElementSibling;
+      btn.setAttribute("aria-expanded", String(!expanded));
+      const icon = btn.querySelector(".faq-icon");
+      if (icon) icon.textContent = expanded ? "+" : "−";
+      if (answer) {
+        if (expanded) answer.setAttribute("hidden", ""); else answer.removeAttribute("hidden");
+      }
+    });
+  });
+
+  // Print invoice
+  document.querySelector("#print-invoice-btn")?.addEventListener("click", () => {
+    const order = getState().lastOrder;
+    printInvoice(order, getState().language);
+  });
+
+  // Share copy link
+  document.querySelector("#share-copy-btn")?.addEventListener("click", () => {
+    const productId = Number(document.querySelector("#share-copy-btn")?.dataset.productId);
+    navigator.clipboard?.writeText(location.href).then(() => {
+      shareCopiedProductId = productId;
+      render();
+      setTimeout(() => { shareCopiedProductId = null; render(); }, 2000);
+    });
+  });
 
   document.querySelectorAll(".add-to-cart").forEach((button) =>
     button.addEventListener("click", () => {
@@ -4732,7 +5099,11 @@ function bindEvents(currentRoute) {
   document.querySelectorAll(".category-trigger").forEach((button) =>
     button.addEventListener("click", () => {
       setFilter("category", button.dataset.category);
-      location.hash = "catalog";
+      pendingCatalogScroll = true;
+      render();
+      requestAnimationFrame(() => {
+        document.getElementById("catalog")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
     }),
   );
 
@@ -4785,6 +5156,14 @@ function bindEvents(currentRoute) {
 
     if (!fullName || !phone || !district) {
       alert(t(lang, "checkoutCustomerDetailsRequired"));
+      return;
+    }
+    if (phone && !validateRwandanPhone(phone)) {
+      alert(t(lang, "auth_invalidPhone"));
+      return;
+    }
+    if (isHomeDelivery && cartSummary.subtotal < MIN_ORDER_RWF) {
+      alert(t(lang, "minOrderWarning").replace("{min}", MIN_ORDER_RWF).replace("{current}", cartSummary.subtotal));
       return;
     }
     if (!isHomeDelivery && !branchId) {
@@ -4844,6 +5223,7 @@ function bindEvents(currentRoute) {
       cardNumber: form.get("cardNumber"),
       address,
       notes: form.get("notes"),
+      landmarks: String(form.get("landmarks") || "").trim(),
       customerEmail: state.currentUser?.email || "",
       customerLocation: customerLocationState,
       nearestBranch: nearestBranchState,
@@ -6224,6 +6604,31 @@ function getTimeAgo(dateString, tr) {
 
 function pwWrap(name, required = false) {
   return `<div class="pw-wrap"><input name="${name}" type="password" minlength="6" ${required ? "required" : ""} /><button type="button" class="pw-toggle" tabindex="-1" aria-label="Show password">&#128065;</button></div>`;
+}
+
+function printInvoice(order, language) {
+  if (!order) return;
+  const lang = language || "en";
+  const rows = (order.items || []).map((item) =>
+    `<tr><td>${String(item.name || "").replace(/</g, "&lt;")}</td><td>${item.quantity}</td><td>${formatPrice(item.lineTotal)}</td></tr>`
+  ).join("");
+  const html = `<!DOCTYPE html><html lang="${lang}"><head><meta charset="UTF-8"><title>${t(lang, "printInvoiceTitle")}</title>
+  <style>body{font-family:sans-serif;padding:2rem;color:#111}h1{color:#f08f0b}table{width:100%;border-collapse:collapse;margin-top:1rem}th,td{border:1px solid #ddd;padding:0.5rem 0.75rem;text-align:left}th{background:#f9a11b;color:#fff}.total{font-weight:700;font-size:1.1rem}.muted{color:#666;font-size:0.85rem}</style>
+  </head><body>
+  <h1>🛒 Simba Supermarket</h1>
+  <p class="muted">${t(lang, "printInvoiceTitle")}</p>
+  <p><strong>${t(lang, "orderSummary")}:</strong> ${String(order.reference || "").replace(/</g, "&lt;")}</p>
+  <p><strong>${t(lang, "fullName")}:</strong> ${String(order.customer?.fullName || "").replace(/</g, "&lt;")}</p>
+  <p><strong>${t(lang, "paymentMethod")}:</strong> ${String(order.paymentMethod || "").replace(/</g, "&lt;")}</p>
+  <table><thead><tr><th>${t(lang, "product")}</th><th>${t(lang, "quantity")}</th><th>${t(lang, "total")}</th></tr></thead><tbody>${rows}</tbody></table>
+  <p class="total" style="margin-top:1rem">${t(lang, "total")}: ${formatPrice(order.totals?.total || 0)}</p>
+  <p class="muted" style="margin-top:2rem">info@simbasupermarket.rw · +250 788 100 000 · Kigali, Rwanda</p>
+  <script>window.onload=function(){window.print();}<\/script></body></html>`;
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const win = window.open(url, "_blank");
+  if (win) win.focus();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
 function escapeHtml(value) {

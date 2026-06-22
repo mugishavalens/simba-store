@@ -25,11 +25,13 @@ export const STORAGE_KEYS = {
   recentlyViewed: "simba.recently-viewed.v1",
   wishlist: "simba.wishlist.v1",
   languageWelcomeSeen: "simba.language-welcome-seen.v1",
+  saveForLater: "simba.save-for-later.v1",
 };
 
 export const VAT_RATE = 0.18;
 export const DEFAULT_MIN_STOCK = 5;
 export const EXPIRY_ALERT_DAYS = 30;
+export const MIN_ORDER_RWF = 2500;
 
 export const GOOGLE_CLIENT_ID = "258086530526-78tsu8svfh76n6l999qe17ihvoc3q8vl.apps.googleusercontent.com";
 
@@ -132,15 +134,15 @@ export const DEMO_BRANCH_USERS = [
 ];
 
 export const SIMBA_BRANCHES = [
-  { id: 1,  name: "Simba Supermarket Remera",      lat: -1.9441, lng: 30.1122, address: "KG 9 Ave, Remera, Kigali" },
-  { id: 2,  name: "Simba Supermarket Kimironko",   lat: -1.9302, lng: 30.1147, address: "KG 11 Ave, Kimironko, Kigali" },
-  { id: 3,  name: "Simba Supermarket Kacyiru",     lat: -1.9380, lng: 30.0870, address: "KG 7 Ave, Kacyiru, Kigali" },
-  { id: 4,  name: "Simba Supermarket Nyamirambo",  lat: -1.9750, lng: 30.0450, address: "KN 3 Rd, Nyamirambo, Kigali" },
-  { id: 5,  name: "Simba Supermarket Gikondo",     lat: -1.9897, lng: 30.0892, address: "KK 15 Rd, Gikondo, Kigali" },
-  { id: 6,  name: "Simba Supermarket Kanombe",     lat: -1.9690, lng: 30.1350, address: "KK 737 St, Kanombe, Kigali" },
-  { id: 7,  name: "Simba Supermarket Kinyinya",    lat: -1.9100, lng: 30.1200, address: "KG 18 Ave, Kinyinya, Kigali" },
-  { id: 8,  name: "Simba Supermarket Kibagabaga",  lat: -1.9200, lng: 30.1300, address: "KG 21 Ave, Kibagabaga, Kigali" },
-  { id: 9,  name: "Simba Supermarket Nyanza",      lat: -2.3500, lng: 29.7400, address: "Nyanza Town, Southern Province" },
+  { id: 1, name: "Simba Supermarket Remera",      lat: -1.9441, lng: 30.1122, address: "KG 9 Ave, Remera, Kigali",           hours: "Mon–Sat 07:30–21:00 · Sun 08:00–20:00", phone: "+250 788 300 001" },
+  { id: 2, name: "Simba Supermarket Kimironko",   lat: -1.9302, lng: 30.1147, address: "KG 11 Ave, Kimironko, Kigali",       hours: "Mon–Sat 07:30–21:00 · Sun 08:00–20:00", phone: "+250 788 300 002" },
+  { id: 3, name: "Simba Supermarket Kacyiru",     lat: -1.9380, lng: 30.0870, address: "KG 7 Ave, Kacyiru, Kigali",          hours: "Mon–Sat 08:00–21:00 · Sun 09:00–19:00", phone: "+250 788 300 003" },
+  { id: 4, name: "Simba Supermarket Nyamirambo",  lat: -1.9750, lng: 30.0450, address: "KN 3 Rd, Nyamirambo, Kigali",        hours: "Mon–Sat 07:00–21:00 · Sun 08:00–20:00", phone: "+250 788 300 004" },
+  { id: 5, name: "Simba Supermarket Gikondo",     lat: -1.9897, lng: 30.0892, address: "KK 15 Rd, Gikondo, Kigali",          hours: "Mon–Sat 08:00–20:00 · Sun 09:00–18:00", phone: "+250 788 300 005" },
+  { id: 6, name: "Simba Supermarket Kanombe",     lat: -1.9690, lng: 30.1350, address: "KK 737 St, Kanombe, Kigali",          hours: "Mon–Sat 08:00–20:00 · Sun 09:00–18:00", phone: "+250 788 300 006" },
+  { id: 7, name: "Simba Supermarket Kinyinya",    lat: -1.9100, lng: 30.1200, address: "KG 18 Ave, Kinyinya, Kigali",         hours: "Mon–Sat 07:30–21:00 · Sun 08:00–20:00", phone: "+250 788 300 007" },
+  { id: 8, name: "Simba Supermarket Kibagabaga",  lat: -1.9200, lng: 30.1300, address: "KG 21 Ave, Kibagabaga, Kigali",       hours: "Mon–Sat 07:30–21:00 · Sun 08:00–20:00", phone: "+250 788 300 008" },
+  { id: 9, name: "Simba Supermarket Nyanza",      lat: -2.3500, lng: 29.7400, address: "Nyanza Town, Southern Province",      hours: "Mon–Sat 08:00–20:00 · Sun 09:00–17:00", phone: "+250 788 300 009" },
 ];
 
 export const SHOPPING_ASSISTANT_PROMPT = `You are an intelligent shopping assistant for Simba Supermarket in Rwanda.

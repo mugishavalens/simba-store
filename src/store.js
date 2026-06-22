@@ -50,6 +50,7 @@ const state = {
   promotions: readStorage(STORAGE_KEYS.promotions, defaultDemoPromotions()),
   recentlyViewed: readStorage(STORAGE_KEYS.recentlyViewed, []),
   wishlist: readStorage(STORAGE_KEYS.wishlist, []),
+  saveForLater: readStorage(STORAGE_KEYS.saveForLater, []),
   languageWelcomeSeen: readStorage(STORAGE_KEYS.languageWelcomeSeen, false),
   adminTab: readStorage(STORAGE_KEYS.adminTab, "overview"),
   careTab: readStorage(STORAGE_KEYS.careTab, "messages"),
@@ -431,6 +432,12 @@ export function setSearch(value) {
 export function setSearchDisplay(value) {
   state.searchDisplay = value;
   emit();
+}
+
+export function setSearchBoth(display, search) {
+  state.searchDisplay = display;
+  state.search = search;
+  emit(); // single emit = single render
 }
 
 export function setFilter(key, value) {
@@ -935,6 +942,43 @@ export function clearCart() {
   state.orderComplete = false;
   state.checkoutFeedback = null;
   persist(STORAGE_KEYS.cart, state.cart);
+  emit();
+}
+
+export function moveToSaveForLater(productId) {
+  const id = Number(productId);
+  const cartItem = state.cart.find((item) => Number(item.productId) === id);
+  if (!cartItem) return;
+  state.cart = state.cart.filter((item) => Number(item.productId) !== id);
+  const existing = (state.saveForLater || []).find((item) => Number(item.productId) === id);
+  if (!existing) {
+    state.saveForLater = [...(state.saveForLater || []), { ...cartItem }];
+  }
+  persist(STORAGE_KEYS.cart, state.cart);
+  persist(STORAGE_KEYS.saveForLater, state.saveForLater);
+  emit();
+}
+
+export function moveFromSaveForLaterToCart(productId) {
+  const id = Number(productId);
+  const sflItem = (state.saveForLater || []).find((item) => Number(item.productId) === id);
+  if (!sflItem) return;
+  state.saveForLater = (state.saveForLater || []).filter((item) => Number(item.productId) !== id);
+  const inCart = state.cart.find((item) => Number(item.productId) === id);
+  if (inCart) {
+    inCart.quantity = (inCart.quantity || 1) + (sflItem.quantity || 1);
+  } else {
+    state.cart = [...state.cart, { ...sflItem }];
+  }
+  persist(STORAGE_KEYS.cart, state.cart);
+  persist(STORAGE_KEYS.saveForLater, state.saveForLater);
+  emit();
+}
+
+export function removeFromSaveForLater(productId) {
+  const id = Number(productId);
+  state.saveForLater = (state.saveForLater || []).filter((item) => Number(item.productId) !== id);
+  persist(STORAGE_KEYS.saveForLater, state.saveForLater);
   emit();
 }
 

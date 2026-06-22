@@ -449,5 +449,15 @@ export function route() {
   if (path === "branch") return { name: "branch" };
   if (path === "promotions") return { name: "promotions" };
   if (path === "wishlist") return { name: "wishlist" };
+  if (path === "about") return { name: "about" };
+  if (path === "branches") return { name: "branches" };
+  if (path === "faq") return { name: "faq" };
   return { name: "home" };
+}
+
+export const RW_PHONE_REGEX = /^\+250(72|73|78|79)\d{7}$/;
+
+export function validateRwandanPhone(value) {
+  const normalized = String(value || "").replace(/[\s\-\(\)]/g, "");
+  return RW_PHONE_REGEX.test(normalized);
 }

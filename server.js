@@ -54,6 +54,39 @@ async function readBody(req) {
   });
 }
 
+function localNlSearch(query) {
+  const q = query.toLowerCase();
+  const strip = (s) => s.replace(/\b(i want|show me|find|looking for|give me|something for|things for|je veux|cherche|ndashaka|mbona)\b/g, " ").trim();
+  const cleaned = strip(q);
+
+  const rules = [
+    { terms: ["breakfast","petit.d[ej]","ifunguro","cereal","oatmeal","porridge","pain grille","toast"], searchTerm: "bread milk cereal oatmeal", category: "Food Products" },
+    { terms: ["lunch","dejeuner","amafunguro yo mu","rice","beans","lentil","pasta"], searchTerm: "rice beans pasta lunch", category: "Food Products" },
+    { terms: ["dinner","souper","diner","amasaha ya nimu"], searchTerm: "rice chicken meat dinner", category: "Food Products" },
+    { terms: ["snack","gouter","urubangamizi","chips","biscuit","crisps","cracker"], searchTerm: "biscuits crisps snacks", category: "Food Products" },
+    { terms: ["beer","biere","inzoga","miitzig","amstel","heineken","corona","primus","turbo king"], searchTerm: "miitzig amstel heineken beer primus", category: "Alcoholic Drinks" },
+    { terms: ["wine","vin","divin","sparkling","chamdor","champagne"], searchTerm: "wine sparkling chamdor", category: "Alcoholic Drinks" },
+    { terms: ["whisky","whiskey","scotch","vodka","cognac","rum","rum","gin","spirit","alcool","alcohol"], searchTerm: "whisky vodka gin rum cognac", category: "Alcoholic Drinks" },
+    { terms: ["alcohol","boisson alcool","inzoga"], searchTerm: "beer wine whisky spirits", category: "Alcoholic Drinks" },
+    { terms: ["milk","lait","amata","dairy","yogurt","cheese","butter","cream"], searchTerm: "milk yogurt butter dairy", category: "Food Products" },
+    { terms: ["baby","bebe","umwana","diapers","pampers","wipes","lactogen","infant","formula"], searchTerm: "lactogen diapers wipes baby formula", category: "Baby Products" },
+    { terms: ["clean","nettoy","gusan","detergent","bleach","toilet paper","disinfect","sanitiz","soap","savon","laundry"], searchTerm: "detergent bleach cleaner soap", category: "Cleaning & Sanitary" },
+    { terms: ["shampoo","conditioner","lotion","cream","perfume","deodor","makeup","skincare","beauty","cosmetic","hair"], searchTerm: "shampoo lotion cream cosmetics", category: "Cosmetics & Personal Care" },
+    { terms: ["pot","pan","kettle","iron","cookware","applian","kitchen","cup","mug","bowl"], searchTerm: "pots pans cookware kitchen", category: "Kitchenware & Electronics" },
+    { terms: ["sport","fitness","gym","wellness","exercise"], searchTerm: "sports fitness wellness", category: "Sports & Wellness" },
+    { terms: ["pet","dog","cat","animal","bird"], searchTerm: "pet food animal", category: "Pet Care" },
+    { terms: ["water","juice","soda","soft drink","drink","beverage","boisson","amazi","inzoga y'imbuto"], searchTerm: "water juice soda drink", category: "Food Products" },
+    { terms: ["flour","sugar","rice","grain","cooking oil","oil","huile","sel","salt","staple","commodity"], searchTerm: "flour sugar rice oil cooking", category: "General" },
+  ];
+
+  for (const rule of rules) {
+    if (rule.terms.some((t) => new RegExp(t).test(cleaned))) {
+      return { searchTerm: rule.searchTerm, category: rule.category };
+    }
+  }
+  return { searchTerm: cleaned || query, category: "all" };
+}
+
 async function handleAiSearch(req, res) {
   try {
     const raw = await readBody(req);
@@ -67,8 +100,10 @@ async function handleAiSearch(req, res) {
     const requestApiKey = req.headers["x-groq-api-key"] || bodyApiKey;
     const apiKey = String(requestApiKey || process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY || "").trim();
     if (!apiKey) {
-      res.writeHead(503, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "AI search not configured" }));
+      // Local NL fallback — no API key needed
+      const localResult = localNlSearch(query);
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify(localResult));
       return;
     }
 
@@ -76,7 +111,7 @@ async function handleAiSearch(req, res) {
     const baseUrl = isGroq
       ? "https://api.groq.com/openai/v1/chat/completions"
       : "https://api.openai.com/v1/chat/completions";
-    const model = isGroq ? "llama-3.1-8b-instant" : "gpt-4o-mini";
+    const model = isGroq ? "llama-3.3-70b-versatile" : "gpt-4o-mini";
 
     const response = await fetch(baseUrl, {
       method: "POST",
