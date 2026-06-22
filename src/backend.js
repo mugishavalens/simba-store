@@ -503,8 +503,12 @@ export async function createOrder(payload) {
     const product = products.find((entry) => Number(entry.id) === Number(item.productId));
     if (!product) return { ok: false, code: "branchStockUnavailable" };
     if (!isHomeDelivery) {
-      const branchQty = Number(product?.branchStock?.[branchId] || 0);
-      if (branchQty < Number(item.quantity || 0)) {
+      if (product.branchStock) {
+        const branchQty = Number(product.branchStock[branchId] || 0);
+        if (branchQty < Number(item.quantity || 0)) {
+          return { ok: false, code: "branchStockUnavailable" };
+        }
+      } else if (product.inStock === false) {
         return { ok: false, code: "branchStockUnavailable" };
       }
     }

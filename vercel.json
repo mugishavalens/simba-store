@@ -1,0 +1,20 @@
+{
+  "rewrites": [
+    { "source": "/api/ai-search", "destination": "/api/ai-search.js" },
+    { "source": "/((?!api/|src/|styles/|assets/).*)", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    },
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=86400" }
+      ]
+    }
+  ]
+}

@@ -1640,7 +1640,7 @@ function renderCheckoutView(state, cartSummary, tr) {
                     <span>${tr("deliveryTimeSlot")}</span>
                     <select name="deliveryTimeSlot">
                       <option value="">—</option>
-                      ${DELIVERY_TIME_SLOTS.map((s) => `<option value="${s.id}">${escapeHtml(s.label)}</option>`).join("")}
+                      ${DELIVERY_TIME_SLOTS.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("")}
                     </select>
                   </label>
                 </div>`}
@@ -1696,7 +1696,7 @@ function renderCheckoutView(state, cartSummary, tr) {
                 <label class="checkout-field" style="margin-top:0.5rem">
                   <span>${tr("recurringOrder")}</span>
                   <select name="recurringOption">
-                    ${RECURRING_OPTIONS.map((opt) => `<option value="${opt.id}">${escapeHtml(tr(opt.labelKey) || opt.id)}</option>`).join("")}
+                    ${RECURRING_OPTIONS.map((opt) => { const labelKey = { none: "recurringNone", weekly: "recurringWeekly", biweekly: "recurringBiweekly", monthly: "recurringMonthly" }[opt]; return `<option value="${escapeHtml(opt)}">${escapeHtml(tr(labelKey) || opt)}</option>`; }).join("")}
                   </select>
                 </label>
                 <label class="checkout-field" id="momo-field" style="${isMomoSelected ? "" : "display:none"}">
@@ -5162,8 +5162,8 @@ function bindEvents(currentRoute) {
       alert(t(lang, "auth_invalidPhone"));
       return;
     }
-    if (isHomeDelivery && cartSummary.subtotal < MIN_ORDER_RWF) {
-      alert(t(lang, "minOrderWarning").replace("{min}", MIN_ORDER_RWF).replace("{current}", cartSummary.subtotal));
+    if (cartSummary.subtotal < MIN_ORDER_RWF) {
+      alert(t(lang, "minOrderWarning").replace("{min}", formatPrice(MIN_ORDER_RWF)).replace("{current}", formatPrice(cartSummary.subtotal)));
       return;
     }
     if (!isHomeDelivery && !branchId) {
