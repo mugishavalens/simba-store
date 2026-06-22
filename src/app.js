@@ -693,7 +693,10 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
                 ? state.currentUser?.role === "customer"
                   ? `<a class="button button--primary" href="#/account">&#9881; ${tr("customerSettings")}</a>`
                   : `<button class="button button--primary" id="signout-toggle">${tr("navSignOut")}</button>`
-                : `<a class="button button--primary" href="#/auth/signin">${tr("navSignIn")}</a>`
+                : `<div class="topbar-auth-btns">
+                    <a class="button button--ghost button--sm" href="#/auth/signin">${tr("navSignIn")}</a>
+                    <a class="button button--primary button--sm" href="#/auth/signup">${tr("authCreateAccount") || "Sign Up"}</a>
+                  </div>`
             }
           </div>
         </div>
@@ -1025,7 +1028,11 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
               <p class="hero__lede">${tr("heroText")}</p>
               <div class="hero__actions">
                 <a class="button button--primary button--lg" href="#catalog">${tr("shopNow")}<span class="button__arrow" aria-hidden="true">&rarr;</span></a>
-                ${state.isAuthenticated ? `<button class="button button--glass" id="hero-cart">${tr("viewCart")}</button>` : `<a class="button button--glass" href="#/auth/signin">${tr("navSignIn")}</a>`}
+                ${state.isAuthenticated
+                  ? `<button class="button button--glass" id="hero-cart">${tr("viewCart")}</button>`
+                  : `<a class="button button--glass" href="#/auth/signup">${tr("authCreateAccount") || "Create Account"}</a>
+                     <a class="button button--outline-white hero-signin-link" href="#/auth/signin">${tr("navSignIn")}</a>`
+                }
               </div>
               <div class="hero__badges">
                 <span class="hero-badge hero-badge--on-dark">${tr("heroBadgeOne")}</span>
@@ -1040,10 +1047,25 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
               <div class="stat"><div class="stat__value">${cartSummary.count}</div><div>${tr("cartCount")}</div></div>
             </div>
           </div>
-          <a class="hero__scroll" href="#deals" aria-label="Scroll to deals">
+          <a class="hero__scroll" href="#catalog" aria-label="Scroll to catalog">
             <span class="hero__scroll-dot"></span>
           </a>
         </div>
+      </section>
+
+      <section class="section section--catalog-first" id="catalog">
+        <div class="section__header">
+          <div>
+            <h2 class="section__title">${tr("productsTitle")}</h2>
+            <p class="section__lead">${tr("productsLead")}</p>
+          </div>
+          <span class="pill">${filteredProducts.length} ${tr("filterResults")}</span>
+        </div>
+        ${
+          featured.length
+            ? `<div class="product-grid">${featured.map((product) => renderProductCard(product, tr)).join("")}</div>`
+            : `<div class="empty-state"><h3>${tr("noResultsTitle")}</h3><p>${tr("noResultsText")}</p></div>`
+        }
       </section>
 
       ${renderTodaysDeals(state, tr)}
@@ -1157,26 +1179,6 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
       ${renderWishlistSection(state, tr)}
 
       ${renderRecentlyViewed(state, tr)}
-
-      <section class="section" id="catalog">
-        <div class="section__header">
-          <div>
-            <h2 class="section__title">${tr("productsTitle")}</h2>
-            <p class="section__lead">${tr("productsLead")}</p>
-          </div>
-          <span class="pill">${filteredProducts.length} ${tr("filterResults")}</span>
-        </div>
-        <div class="banner">
-          <h3>${tr("featuredBannerTitle")}</h3>
-          <p>${tr("featuredBannerText")}</p>
-          <div><button class="button button--accent category-trigger" data-category="General">${tr("featuredBannerAction")}</button></div>
-        </div>
-        ${
-          featured.length
-            ? `<div class="product-grid">${featured.map((product) => renderProductCard(product, tr)).join("")}</div>`
-            : `<div class="empty-state"><h3>${tr("noResultsTitle")}</h3><p>${tr("noResultsText")}</p></div>`
-        }
-      </section>
 
       <section class="section" id="branches">
         <div class="section__header">

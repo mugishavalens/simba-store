@@ -3086,18 +3086,48 @@ body {
 
 @media (max-width: 600px) {
   .assistant-shell {
+    position: fixed;
     right: 1rem;
     left: auto;
-    bottom: 1rem;
+    bottom: 5rem;
     z-index: 300;
     align-items: flex-end;
+    width: auto;
+    max-width: none;
+  }
+
+  .assistant-launcher {
+    width: 52px;
+    height: 52px;
+    min-height: unset;
+    padding: 0;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+  }
+
+  .assistant-launcher span {
+    display: none;
+  }
+
+  .assistant-launcher::before {
+    content: "🤖";
+    font-size: 1.4rem;
+    line-height: 1;
   }
 
   .assistant-panel {
-    width: min(94vw, 400px);
-    max-height: 72vh;
+    position: fixed;
+    right: 1rem;
+    bottom: 8.5rem;
+    left: 1rem;
+    width: auto;
+    max-height: 65vh;
     border-radius: 20px;
     box-shadow: 0 12px 48px rgba(0,0,0,0.32);
+    z-index: 301;
   }
 
   .assistant-form {
@@ -5045,7 +5075,7 @@ body[data-theme="dark"] .deal-card {
   }
 
   .discover-panel {
-    max-height: 120px;
+    max-height: 220px;
     overflow: hidden;
   }
 
@@ -5505,4 +5535,54 @@ input:focus, select:focus, textarea:focus {
 @media (max-width: 600px) {
   .quickview-body { grid-template-columns: 1fr !important; }
   .quickview-image { min-height: 200px !important; }
+}
+
+/* ── Topbar auth buttons (Sign In + Create Account) ──────────────────────── */
+.topbar-auth-btns {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+.topbar-auth-btns .button--sm {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.82rem;
+}
+
+/* ── Hero outline-white button (Sign In link on dark hero) ───────────────── */
+.button--outline-white {
+  background: transparent;
+  border: 1.5px solid rgba(255,255,255,0.6);
+  color: #fff;
+  padding: 0.65rem 1.1rem;
+  border-radius: 999px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.button--outline-white:hover {
+  background: rgba(255,255,255,0.15);
+  border-color: rgba(255,255,255,0.9);
+}
+
+/* ── Hero actions wrap on mobile ─────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .hero__actions { flex-wrap: wrap; gap: 0.5rem; }
+  .hero-signin-link { display: none; }
+  .topbar-auth-btns .button--ghost { display: none; }
+}
+
+/* ── Catalog section highlighted ─────────────────────────────────────────── */
+#catalog {
+  scroll-margin-top: 80px;
+}
+
+/* ── Discover panel always-visible hint ──────────────────────────────────── */
+.discover-panel .searchbar__ai-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: var(--brand);
+  color: #fff;
+  letter-spacing: 0.04em;
 }
