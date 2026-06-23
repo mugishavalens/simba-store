@@ -38,6 +38,7 @@ import {
   clearRecentlyViewed,
   dismissLanguageWelcome,
   seedDemoBranchOrders,
+  seedDemoCustomerOrders,
   seedSingleIncomingOrder,
   toggleWishlist,
   removeFromWishlist,
@@ -404,11 +405,10 @@ function buildProductImageFallback(product) {
 }
 
 function renderProductImage(product, options = {}) {
-  const fallback = buildProductImageFallback(product);
-  const src = String(product?.image || "").trim() || fallback;
+  const src = String(product?.image || product?.imageUrl || "").trim() || "/assets/placeholder.svg";
   const loading = options.eager ? "eager" : "lazy";
   const className = options.className ? ` class="${escapeHtml(options.className)}"` : "";
-  return `<img${className} src="${escapeHtml(src)}" data-fallback-src="${escapeHtml(fallback)}" alt="${escapeHtml(product?.name || "Product image")}" loading="${loading}" onerror="this.onerror=null;this.src=this.dataset.fallbackSrc" />`;
+  return `<img${className} src="${escapeHtml(src)}" alt="${escapeHtml(product?.name || "Product image")}" loading="${loading}" onerror="this.onerror=null;this.src='/assets/placeholder.svg'" />`;
 }
 
 function renderLanguageWelcome(state) {
@@ -6660,13 +6660,9 @@ function isGoogleConfigured() {
 }
 
 function getGoogleRedirectUri() {
-  // Get the configured redirect URI or construct from current location
-  const configured = document.querySelector('meta[name="google-redirect-uri"]')?.content || "";
-  if (configured) return configured;
-  
+  // Dynamically use the current deployment origin so this works on Vercel, localhost, etc.
   const origin = window.location.origin || `${window.location.protocol}//${window.location.host}`;
-  // Use the base origin with /index.html path for compatibility
-  return "https://aaqyatojbyhlcaozmyuh.supabase.co/auth/v1/callback";
+  return `${origin}/index.html`;
 }
 
 function startGoogleRedirect() {
@@ -6715,6 +6711,15 @@ async function handleGoogleAuthCallback() {
   const ok = await loginWithGoogle({ idToken, nonce });
   if (ok) {
     const role = getState().currentUser?.role;
-    location.hash = role === "customer_care" ? "/care" : "/";
+    const shouldReturnToCheckout = sessionStorage.getItem(CHECKOUT_AFTER_AUTH_KEY) === "1";
+    sessionStorage.removeItem(CHECKOUT_AFTER_AUTH_KEY);
+    if (role === "customer") {
+      seedDemoCustomerOrders();
+    }
+    location.hash = role === "customer_care"
+      ? "/care"
+      : ["admin", "manager", "staff"].includes(role)
+        ? role === "manager" || role === "staff" ? "/branch" : "/admin"
+        : shouldReturnToCheckout ? "/checkout" : "/";
   }
 }

@@ -37,11 +37,9 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="./styles/main.css" />
     <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <!-- Google OAuth Configuration (update these with your actual values from Google Console) -->
-    <!-- For local dev: http://localhost:5000/index.html -->
-    <!-- For production: https://simbaonlineshopping.com/index.html -->
+    <!-- Google OAuth: redirect URI is set dynamically from window.location.origin in app.js -->
+    <!-- Register your Vercel URL in Google Console: https://console.cloud.google.com/apis/credentials -->
     <meta name="google-client-id" content="258086530526-78tsu8svfh76n6l999qe17ihvoc3q8vl.apps.googleusercontent.com" />
-    <meta name="google-redirect-uri" content="http://localhost:5000/index.html" />
   </head>
   <body>
     <!--
