@@ -1,20 +1,10 @@
 import { catalogData } from "./catalog-data.js";
 
 export async function loadCatalog() {
-  let payload = null;
-
-  try {
-    const response = await fetch("./simba_products.json");
-    if (response.ok) {
-      payload = await response.json();
-    }
-  } catch {
-    // Fall back to the bundled catalog when running from file:// or other restricted contexts.
-  }
-
-  if (!payload) {
-    payload = catalogData;
-  }
+  // Always use the bundled catalog-data.js — the simba_products.json file
+  // has incorrect category assignments (251 products mis-tagged as "Alcoholic Drinks")
+  // so we use catalog-data.js as the single source of truth on all environments.
+  const payload = catalogData;
 
   const products = payload.products.map((product) => ({
     ...product,
