@@ -496,6 +496,13 @@ export function setSearchBoth(display, search) {
   emit(); // single emit = single render
 }
 
+// Update display value silently — no emit, no re-render, no DOM thrash.
+// Use this to keep state.searchDisplay in sync while the user is typing
+// so the next full render shows the correct input value.
+export function patchSearchDisplay(value) {
+  state.searchDisplay = value;
+}
+
 export function setFilter(key, value) {
   state.filters[key] = value;
   emit();

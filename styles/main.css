@@ -5586,3 +5586,13 @@ input:focus, select:focus, textarea:focus {
   color: #fff;
   letter-spacing: 0.04em;
 }
+
+/* ── Catalog load-more ─────────────────────────────────────────────────── */
+.catalog-load-more {
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem 0 0.5rem;
+}
+.catalog-load-more .button--outline {
+  min-width: 220px;
+}

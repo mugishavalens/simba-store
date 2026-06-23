@@ -62,6 +62,7 @@ import {
   setSearch,
   setSearchDisplay,
   setSearchBoth,
+  patchSearchDisplay,
   setTheme,
   signOut,
   subscribe,
@@ -89,6 +90,14 @@ const CHECKOUT_AFTER_AUTH_KEY = "simba.checkout-after-auth";
 // ── checkout mode state ────────────────────────────────────────────────────────
 let checkoutDeliveryMode = "pickup"; // "pickup" | "home"
 let checkoutSelectedZoneId = "";
+
+// ── AI search — module-level so timers survive across renders ──────────────────
+let _aiDebounceTimer = null;
+let _aiController = null;
+let _aiLastQuery = "";
+
+// ── Catalog pagination — how many products to show (grows on "Load more") ─────
+let _catalogLimit = 36;
 
 // ── Star rating helpers ────────────────────────────────────────────────────────
 function renderStars(rating, maxStars = 5) {
@@ -988,7 +997,10 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
     (state.filters?.price && state.filters.price !== "all") ||
     (state.filters?.stock && state.filters.stock !== "all") ||
     (state.search && state.search.trim().length > 0);
-  const featured = hasActiveFilter ? filteredProducts : filteredProducts.slice(0, 18);
+  const CATALOG_PAGE_SIZE = 36;
+  const catalogLimit = hasActiveFilter ? _catalogLimit : Math.min(_catalogLimit, CATALOG_PAGE_SIZE);
+  const featured = filteredProducts.slice(0, catalogLimit);
+  const hasMore = filteredProducts.length > featured.length;
   const reviewCount = (state.branchReviews || []).length;
   const averageRating = reviewCount
     ? (
@@ -1063,7 +1075,8 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
         </div>
         ${
           featured.length
-            ? `<div class="product-grid">${featured.map((product) => renderProductCard(product, tr)).join("")}</div>`
+            ? `<div class="product-grid">${featured.map((product) => renderProductCard(product, tr)).join("")}</div>
+               ${hasMore ? `<div class="catalog-load-more"><button class="button button--outline" id="catalog-load-more-btn">Load ${Math.min(filteredProducts.length - featured.length, CATALOG_PAGE_SIZE)} more of ${filteredProducts.length - featured.length} remaining</button></div>` : ""}`
             : `<div class="empty-state"><h3>${tr("noResultsTitle")}</h3><p>${tr("noResultsText")}</p></div>`
         }
       </section>
@@ -4550,6 +4563,13 @@ function bindAssistantDrag() {
 
 function bindEvents(currentRoute) {
   startDealsCountdown();
+
+  document.querySelector("#catalog-load-more-btn")?.addEventListener("click", () => {
+    _catalogLimit += 36;
+    // Trigger re-render by setting the same search display value
+    setSearchDisplay(getState().searchDisplay);
+  });
+
   if (currentRoute && currentRoute.name === "product" && currentRoute.id) {
     pushRecentlyViewed(currentRoute.id);
   }
@@ -4661,18 +4681,13 @@ function bindEvents(currentRoute) {
     const input = document.querySelector("#search-input");
     if (!input) return;
 
-    let aiDebounceTimer = null;
-    let lastAiQuery = "";
-    let aiController = null;
-
     async function runAiSearch(rawValue) {
       const trimmed = rawValue.trim();
-      if (trimmed.length < 3) return;
-      if (trimmed === lastAiQuery) return;
-      lastAiQuery = trimmed;
+      if (!trimmed || trimmed === _aiLastQuery) return;
+      _aiLastQuery = trimmed;
 
-      if (aiController) aiController.abort();
-      aiController = new AbortController();
+      if (_aiController) { try { _aiController.abort(); } catch (_) {} }
+      _aiController = new AbortController();
 
       const searchEl = document.querySelector("#search-input")?.closest(".searchbar");
       if (searchEl) searchEl.classList.add("search--ai-loading");
@@ -4688,25 +4703,30 @@ function bindEvents(currentRoute) {
               ...(groqKey ? { "X-Groq-Api-Key": groqKey } : {}),
             },
             body: JSON.stringify({ query: trimmed, apiKey: groqKey }),
-            signal: aiController.signal,
+            signal: _aiController.signal,
           });
           if (res.ok) data = await res.json();
-        } catch (_fetchErr) { /* network error or non-ok — fall through to client NL */ }
+        } catch (_fetchErr) { /* network/abort — fall through */ }
 
         if (!data || data.error) data = clientNlSearch(trimmed);
 
-        const { searchTerm, category } = data;
+        const { searchTerm, category } = data || {};
         const validCategories = getCategories(getState().products);
         if (category && category !== "all" && validCategories.includes(category)) {
           setFilter("category", category);
         }
-        setSearch(searchTerm || trimmed);
+        // Reset catalog limit so search results start from page 1
+        _catalogLimit = 36;
+        // setSearchBoth keeps display in sync with what the user typed
+        setSearchBoth(trimmed, searchTerm || trimmed);
         pendingCatalogScroll = true;
       } catch (err) {
-        if (err.name !== "AbortError") {
-          setSearch(trimmed);
+        if (err?.name !== "AbortError") {
+          _catalogLimit = 36;
+          setSearchBoth(trimmed, trimmed);
         }
       } finally {
+        _aiController = null;
         const el = document.querySelector("#search-input")?.closest(".searchbar");
         if (el) el.classList.remove("search--ai-loading");
         const catEl = document.querySelector("#category-filter");
@@ -4716,44 +4736,53 @@ function bindEvents(currentRoute) {
 
     input.addEventListener("input", (event) => {
       const value = event.target.value;
-      setSearchBoth(value, value); // single render per keystroke
-      clearTimeout(aiDebounceTimer);
-      if (value.trim().length >= 3) {
-        aiDebounceTimer = setTimeout(() => runAiSearch(value), 500);
+      // Keep state.searchDisplay in sync without triggering a re-render.
+      // This way the next render (after debounce) shows the correct input value.
+      patchSearchDisplay(value);
+      clearTimeout(_aiDebounceTimer);
+      if (value.trim().length >= 2) {
+        // Debounce: run AI search + render only after user pauses typing
+        _aiDebounceTimer = setTimeout(() => runAiSearch(value), 400);
       } else {
-        lastAiQuery = "";
-        if (aiController) { aiController.abort(); aiController = null; }
+        _aiLastQuery = "";
+        if (_aiController) { try { _aiController.abort(); } catch (_) {} _aiController = null; }
+        // Clear immediately if input is empty
+        if (value.trim().length === 0) {
+          _catalogLimit = 36;
+          setSearchBoth("", "");
+          setFilter("category", "all");
+        }
       }
     });
 
     input.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
-        clearTimeout(aiDebounceTimer);
-        if (aiController) { aiController.abort(); aiController = null; }
-        lastAiQuery = "";
+        clearTimeout(_aiDebounceTimer);
+        if (_aiController) { try { _aiController.abort(); } catch (_) {} _aiController = null; }
+        _aiLastQuery = "";
+        _catalogLimit = 36;
         setSearchBoth("", "");
         setFilter("category", "all");
         return;
       }
       if (event.key !== "Enter") return;
       event.preventDefault();
-      const value = event.currentTarget.value;
-      clearTimeout(aiDebounceTimer);
+      const value = event.currentTarget.value.trim();
+      clearTimeout(_aiDebounceTimer);
+      _aiLastQuery = ""; // force fresh search on Enter
       pendingCatalogScroll = true;
-      if (value.trim().length >= 3) {
+      if (value.length >= 2) {
         runAiSearch(value);
-      } else {
-        setSearch(value);
-      }
-      if (location.hash !== "#catalog") {
-        location.hash = "catalog";
+      } else if (value.length === 0) {
+        setSearchBoth("", "");
       }
     });
 
     document.querySelector("#search-clear-btn")?.addEventListener("click", () => {
-      clearTimeout(aiDebounceTimer);
-      if (aiController) { aiController.abort(); aiController = null; }
-      lastAiQuery = "";
+      clearTimeout(_aiDebounceTimer);
+      if (_aiController) { try { _aiController.abort(); } catch (_) {} _aiController = null; }
+      _aiLastQuery = "";
+      _catalogLimit = 36;
       setSearchBoth("", "");
       setFilter("category", "all");
       requestAnimationFrame(() => document.querySelector("#search-input")?.focus());
