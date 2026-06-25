@@ -1,0 +1,31 @@
+[build]
+  publish = "."
+
+# SPA fallback — serve index.html for any path with no matching static file
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Never cache JS/CSS so stale code can't be served from Netlify's CDN
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Cache-Control = "no-store"
+
+[[headers]]
+  for = "/*.css"
+  [headers.values]
+    Cache-Control = "no-store"
+
+# Assets (images, fonts) can be cached longer
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
