@@ -4715,10 +4715,21 @@ function bindEvents(currentRoute) {
         if (category && category !== "all" && validCategories.includes(category)) {
           setFilter("category", category);
         }
+
+        // Preserve any price constraint from the original query.
+        // clientNlSearch strips it (e.g. "i want alcohol under 20000" → "whisky vodka gin rum"),
+        // so we re-append it so parseSearchIntent can apply the price filter.
+        const priceClauseMatch = trimmed.match(
+          /(?:under|below|less than|up to|maximum|max|cheaper than|over|above|more than|at least|minimum|min|between)\s*(?:rf|rwf)?\s*[\d\s,.]+(?:\s*(?:rwf|rf))?(?:\s*(?:and|to|-)\s*(?:rf|rwf)?\s*[\d\s,.]+(?:\s*(?:rwf|rf))?)?/i
+        );
+        const priceClause = priceClauseMatch ? priceClauseMatch[0].trim() : "";
+        const baseSearch = searchTerm || trimmed;
+        const finalSearch = priceClause && !baseSearch.includes(priceClause) ? `${baseSearch} ${priceClause}` : baseSearch;
+
         // Reset catalog limit so search results start from page 1
         _catalogLimit = 36;
         // setSearchBoth keeps display in sync with what the user typed
-        setSearchBoth(trimmed, searchTerm || trimmed);
+        setSearchBoth(trimmed, finalSearch);
         pendingCatalogScroll = true;
       } catch (err) {
         if (err?.name !== "AbortError") {
