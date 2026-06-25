@@ -310,27 +310,33 @@ function clientNlSearch(query) {
   const q = query.toLowerCase();
   const strip = (s) => s.replace(/\b(i want|show me|find|looking for|give me|something for|things for|je veux|cherche|ndashaka|mbona)\b/g, " ").trim();
   const cleaned = strip(q);
+  // Rules: st=null means use the user's actual cleaned keyword (appears in product names).
+  // st="..." means expand to catalog keywords (for concepts not in product names, e.g. "alcohol").
   const rules = [
-    { terms: ["breakfast","ifunguro","cereal","oatmeal","porridge","toast"], st: "bread milk cereal oatmeal", cat: "Food Products" },
-    { terms: ["lunch","dejeuner","amafunguro","pasta","lentil"], st: "rice beans pasta lunch", cat: "Food Products" },
-    { terms: ["dinner","souper","diner"], st: "rice chicken meat dinner", cat: "Food Products" },
-    { terms: ["snack","gouter","chips","biscuit","crisps","cracker"], st: "biscuits crisps snacks", cat: "Food Products" },
-    { terms: ["beer","biere","inzoga","miitzig","amstel","heineken","corona","primus","turbo"], st: "miitzig amstel heineken beer primus", cat: "Alcoholic Drinks" },
-    { terms: ["wine","vin","sparkling","chamdor","champagne"], st: "wine sparkling chamdor", cat: "Alcoholic Drinks" },
-    { terms: ["whisky","whiskey","scotch","vodka","cognac","rum","gin","spirit","alcohol","alcool"], st: "whisky vodka gin rum cognac", cat: "Alcoholic Drinks" },
-    { terms: ["milk","lait","amata","dairy","yogurt","cheese","butter"], st: "milk yogurt butter dairy", cat: "Food Products" },
-    { terms: ["baby","bebe","umwana","diapers","pampers","wipes","lactogen","infant","formula"], st: "lactogen diapers wipes baby formula", cat: "Baby Products" },
-    { terms: ["clean","nettoy","gusan","detergent","bleach","toilet paper","disinfect","sanitiz","laundry"], st: "detergent bleach cleaner soap", cat: "Cleaning & Sanitary" },
-    { terms: ["shampoo","conditioner","lotion","cream","perfume","deodor","makeup","skincare","beauty","cosmetic","hair"], st: "shampoo lotion cream cosmetics", cat: "Cosmetics & Personal Care" },
-    { terms: ["pot","pan","kettle","iron","cookware","applian","kitchen","cup","mug"], st: "pots pans cookware kitchen", cat: "Kitchenware & Electronics" },
-    { terms: ["sport","fitness","gym","wellness","exercise"], st: "sports fitness wellness", cat: "Sports & Wellness" },
-    { terms: ["pet","dog","cat","animal","bird"], st: "pet food animal", cat: "Pet Care" },
-    { terms: ["water","juice","soda","soft drink","drink","beverage","amazi"], st: "water juice soda drink", cat: "Food Products" },
-    { terms: ["flour","sugar","grain","cooking oil","huile","sel","salt","staple"], st: "flour sugar rice oil cooking", cat: "General" },
+    // Concept expansions — the term itself doesn't appear in product names
+    { terms: ["breakfast","ifunguro","oatmeal","porridge","toast"], st: "bread milk cereal oatmeal", cat: "Food Products" },
+    { terms: ["lunch","dejeuner","amafunguro"], st: "rice beans pasta", cat: "Food Products" },
+    { terms: ["dinner","souper","diner"], st: "rice chicken meat", cat: "Food Products" },
+    { terms: ["snack","gouter"], st: "biscuits crisps chips chocolate", cat: "Food Products" },
+    { terms: ["alcohol","alcool"], st: "miitzig amstel heineken beer wine whisky vodka gin rum", cat: "Alcoholic Drinks" },
+    // Product-name terms — use cleaned keyword so exact name matching works
+    { terms: ["beer","biere","inzoga","miitzig","amstel","heineken","corona","primus","turbo"], st: null, cat: "Alcoholic Drinks" },
+    { terms: ["wine","vin","sparkling","chamdor","champagne"], st: null, cat: "Alcoholic Drinks" },
+    { terms: ["whisky","whiskey","scotch","vodka","cognac","rum","gin","spirit"], st: null, cat: "Alcoholic Drinks" },
+    { terms: ["milk","lait","amata","dairy","yogurt","cheese","butter"], st: null, cat: "Food Products" },
+    { terms: ["chips","biscuit","crisps","cracker","chocolate","candy","sweets"], st: null, cat: "Food Products" },
+    { terms: ["baby","bebe","umwana","diapers","pampers","wipes","lactogen","infant","formula"], st: null, cat: "Baby Products" },
+    { terms: ["clean","nettoy","gusan","detergent","bleach","disinfect","sanitiz","laundry","soap","savon"], st: null, cat: "Cleaning & Sanitary" },
+    { terms: ["shampoo","conditioner","lotion","cream","perfume","deodor","makeup","skincare","beauty","cosmetic","hair"], st: null, cat: "Cosmetics & Personal Care" },
+    { terms: ["pot","pan","kettle","iron","cookware","applian","kitchen","cup","mug"], st: null, cat: "Kitchenware & Electronics" },
+    { terms: ["sport","fitness","gym","wellness","exercise"], st: null, cat: "Sports & Wellness" },
+    { terms: ["pet","dog","cat","animal","bird"], st: null, cat: "Pet Care" },
+    { terms: ["water","juice","soda","soft drink","beverage","amazi"], st: null, cat: "Food Products" },
+    { terms: ["flour","sugar","grain","cooking oil","huile","sel","salt","staple"], st: null, cat: "General" },
   ];
   for (const rule of rules) {
     if (rule.terms.some((t) => new RegExp(t).test(cleaned))) {
-      return { searchTerm: rule.st, category: rule.cat };
+      return { searchTerm: rule.st !== undefined ? (rule.st || cleaned) : cleaned, category: rule.cat };
     }
   }
   return { searchTerm: cleaned || query, category: "all" };
@@ -2440,6 +2446,14 @@ function parseAssistantCartAction(rawQuery, products, cart = []) {
     return { action: "view" };
   }
 
+  // Clear-cart intent: "remove everything", "clear my cart", "empty my cart"
+  const hasClearCartIntent =
+    /\b(clear|empty|wipe|reset)\s+(?:my\s+)?(?:cart|basket|bag)\b/.test(query) ||
+    /\b(?:remove|delete)\s+(?:all|everything)(?:\s+(?:from\s+)?(?:my\s+)?(?:cart|basket|bag))?\b/.test(query);
+  if (hasClearCartIntent) {
+    return { action: "clearCart" };
+  }
+
   const hasRemoveVerb = /\b(remove|delete|take out|takeout|drop|futa|siba)\b/.test(query);
   const hasUpdateVerb = /\b(change|update|set|modify|adjust)\b/.test(query);
   const hasAddVerb = /\b(add|put|place|drop|send|order|buy|get|i want|i need|i'd like|give me|ongera|shyira|gura|ndashaka)\b/.test(query);
@@ -2605,6 +2619,15 @@ function buildAssistantCartReply(state, command, tr) {
       cartProductId: Number(product.id),
       cartQuantity: newQuantity,
     };
+  }
+
+  if (command?.action === "clearCart") {
+    if (!(state.cart || []).length) {
+      const text = language === "fr" ? "Votre panier est déjà vide." : language === "rw" ? "Igatabu yawe ni inzuzi." : "Your cart is already empty.";
+      return { text, products: [], cartAction: null, cartProductId: null, cartQuantity: 0 };
+    }
+    const text = language === "fr" ? "Tous les articles ont été retirés de votre panier." : language === "rw" ? "Ibintu byose byakuwe mu gatebo." : "All items have been removed from your cart.";
+    return { text, products: [], cartAction: "clearCart", cartProductId: null, cartQuantity: 0 };
   }
 
   if (command?.action === "remove") {
@@ -5668,7 +5691,9 @@ function bindEvents(currentRoute) {
 
     const reply = await buildAssistantReply(getState(), message, (key) => t(getState().language, key));
     assistantPending = false;
-    if (reply.cartAction === "add" && reply.cartProductId) {
+    if (reply.cartAction === "clearCart") {
+      clearCart();
+    } else if (reply.cartAction === "add" && reply.cartProductId) {
       addToCart(Number(reply.cartProductId), Number(reply.cartQuantity) || 1);
     } else if (reply.cartAction === "remove" && reply.cartProductId) {
       removeFromCart(Number(reply.cartProductId));

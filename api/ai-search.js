@@ -4,28 +4,30 @@ function localNlSearch(query) {
   const q = query.toLowerCase();
   const strip = (s) => s.replace(/\b(i want|show me|find|looking for|give me|something for|things for|je veux|cherche|ndashaka|mbona)\b/g, " ").trim();
   const cleaned = strip(q);
+  // searchTerm null → use cleaned keyword (appears in product names); string → concept expansion
   const rules = [
-    { terms: ["breakfast","cereal","oatmeal","porridge","toast"], searchTerm: "bread milk cereal oatmeal", category: "Food Products" },
-    { terms: ["lunch","rice","beans","pasta"], searchTerm: "rice beans pasta", category: "Food Products" },
-    { terms: ["dinner","supper"], searchTerm: "rice chicken meat", category: "Food Products" },
-    { terms: ["snack","chips","biscuit","crisps","cracker"], searchTerm: "biscuits crisps snacks", category: "Food Products" },
-    { terms: ["beer","biere","inzoga","miitzig","amstel","heineken","primus","turbo king"], searchTerm: "miitzig amstel heineken beer primus", category: "Alcoholic Drinks" },
-    { terms: ["wine","sparkling","chamdor","champagne"], searchTerm: "wine sparkling chamdor", category: "Alcoholic Drinks" },
-    { terms: ["whisky","whiskey","vodka","cognac","rum","gin","spirit"], searchTerm: "whisky vodka gin rum", category: "Alcoholic Drinks" },
-    { terms: ["alcohol","alcool","boisson alcool"], searchTerm: "beer wine whisky", category: "Alcoholic Drinks" },
-    { terms: ["milk","lait","amata","dairy","yogurt","cheese","butter"], searchTerm: "milk yogurt butter", category: "Food Products" },
-    { terms: ["baby","diapers","pampers","wipes","lactogen","infant","formula"], searchTerm: "lactogen diapers wipes baby", category: "Baby Products" },
-    { terms: ["clean","detergent","bleach","toilet paper","laundry","soap","savon"], searchTerm: "detergent bleach cleaner soap", category: "Cleaning & Sanitary" },
-    { terms: ["shampoo","lotion","cream","perfume","deodor","makeup","skincare","beauty","cosmetic","hair"], searchTerm: "shampoo lotion cream cosmetics", category: "Cosmetics & Personal Care" },
-    { terms: ["pot","pan","kettle","iron","cookware","kitchen","cup","mug","bowl"], searchTerm: "pots pans cookware kitchen", category: "Kitchenware & Electronics" },
-    { terms: ["sport","fitness","gym","wellness"], searchTerm: "sports fitness wellness", category: "Sports & Wellness" },
-    { terms: ["pet","dog","cat","animal","bird"], searchTerm: "pet food animal", category: "Pet Care" },
-    { terms: ["water","juice","soda","soft drink","beverage"], searchTerm: "water juice soda drink", category: "Food Products" },
-    { terms: ["flour","sugar","grain","cooking oil","oil","salt","staple"], searchTerm: "flour sugar rice oil", category: "General" },
+    { terms: ["breakfast","ifunguro","oatmeal","porridge","toast"], searchTerm: "bread milk cereal oatmeal", category: "Food Products" },
+    { terms: ["lunch","dejeuner","amafunguro"], searchTerm: "rice beans pasta", category: "Food Products" },
+    { terms: ["dinner","souper","diner"], searchTerm: "rice chicken meat", category: "Food Products" },
+    { terms: ["snack","gouter"], searchTerm: "biscuits crisps chips chocolate", category: "Food Products" },
+    { terms: ["alcohol","alcool","boisson alcool"], searchTerm: "miitzig amstel heineken beer wine whisky vodka gin rum", category: "Alcoholic Drinks" },
+    { terms: ["beer","biere","inzoga","miitzig","amstel","heineken","corona","primus","turbo"], searchTerm: null, category: "Alcoholic Drinks" },
+    { terms: ["wine","vin","sparkling","chamdor","champagne"], searchTerm: null, category: "Alcoholic Drinks" },
+    { terms: ["whisky","whiskey","scotch","vodka","cognac","rum","gin","spirit"], searchTerm: null, category: "Alcoholic Drinks" },
+    { terms: ["milk","lait","amata","dairy","yogurt","cheese","butter"], searchTerm: null, category: "Food Products" },
+    { terms: ["chips","biscuit","crisps","cracker","chocolate","candy"], searchTerm: null, category: "Food Products" },
+    { terms: ["baby","bebe","umwana","diapers","pampers","wipes","lactogen","infant","formula"], searchTerm: null, category: "Baby Products" },
+    { terms: ["clean","nettoy","gusan","detergent","bleach","disinfect","sanitiz","laundry","soap","savon"], searchTerm: null, category: "Cleaning & Sanitary" },
+    { terms: ["shampoo","conditioner","lotion","cream","perfume","deodor","makeup","skincare","beauty","cosmetic","hair"], searchTerm: null, category: "Cosmetics & Personal Care" },
+    { terms: ["pot","pan","kettle","iron","cookware","kitchen","cup","mug","bowl"], searchTerm: null, category: "Kitchenware & Electronics" },
+    { terms: ["sport","fitness","gym","wellness","exercise"], searchTerm: null, category: "Sports & Wellness" },
+    { terms: ["pet","dog","cat","animal","bird"], searchTerm: null, category: "Pet Care" },
+    { terms: ["water","juice","soda","soft drink","beverage","amazi"], searchTerm: null, category: "Food Products" },
+    { terms: ["flour","sugar","grain","cooking oil","oil","salt","staple"], searchTerm: null, category: "General" },
   ];
   for (const rule of rules) {
     if (rule.terms.some((t) => new RegExp(t).test(cleaned))) {
-      return { searchTerm: rule.searchTerm, category: rule.category };
+      return { searchTerm: rule.searchTerm !== null ? rule.searchTerm : cleaned, category: rule.category };
     }
   }
   return { searchTerm: cleaned || query, category: "all" };
