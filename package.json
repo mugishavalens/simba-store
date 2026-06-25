@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "build": "echo 'Static site — no build step needed'"
   },
   "dependencies": {
     "drizzle-zod": "^0.8.3",
