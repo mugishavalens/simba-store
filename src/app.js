@@ -4714,7 +4714,10 @@ function bindEvents(currentRoute) {
             body: JSON.stringify({ query: trimmed, apiKey: groqKey }),
             signal: _aiController.signal,
           });
-          if (res.ok) data = await res.json();
+          if (res.ok) {
+            const text = await res.text();
+            try { data = text ? JSON.parse(text) : null; } catch { /* malformed JSON — fall through */ }
+          }
         } catch (_fetchErr) { /* network/abort — fall through */ }
 
         if (!data || data.error) data = clientNlSearch(trimmed);
@@ -5533,26 +5536,46 @@ function bindEvents(currentRoute) {
 
   document.querySelector("#admin-groq-test")?.addEventListener("click", async () => {
     const resultEl = document.querySelector("#admin-groq-test-result");
-    const key = document.querySelector("#admin-groq-key")?.value?.trim() || localStorage.getItem("simba.groq-api-key") || "";
+    const key = (document.querySelector("#admin-groq-key")?.value || "").trim()
+      || localStorage.getItem("simba.groq-api-key") || "";
     if (!key) {
-      if (resultEl) { resultEl.textContent = "✗ No key entered"; resultEl.style.color = "#ef4444"; }
+      if (resultEl) { resultEl.textContent = "✗ Enter a key first"; resultEl.style.color = "#ef4444"; }
       return;
     }
-    if (resultEl) { resultEl.textContent = "Testing…"; resultEl.style.color = ""; }
+    if (resultEl) { resultEl.textContent = "Testing…"; resultEl.style.color = "#94a3b8"; }
     try {
-      const res = await fetch("/api/ai-search", {
+      // Call Groq directly from the browser — works on localhost and deployed
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Groq-Api-Key": key },
-        body: JSON.stringify({ query: "cheap milk under 2000", apiKey: key }),
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          max_tokens: 60,
+          temperature: 0,
+          messages: [
+            { role: "system", content: 'Return ONLY JSON: {"searchTerm":"<keywords>","category":"<category or all>"}' },
+            { role: "user", content: "i want milk under 2000 RWF" },
+          ],
+        }),
       });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        let hint = `HTTP ${res.status}`;
+        try { const j = JSON.parse(errText); hint = j.error?.message || hint; } catch { /* ignore */ }
+        if (resultEl) { resultEl.textContent = `✗ ${hint}`; resultEl.style.color = "#ef4444"; }
+        return;
+      }
       const data = await res.json();
-      if (data && data.searchTerm && !data.error) {
-        if (resultEl) { resultEl.textContent = `✓ Groq connected — returned: "${data.searchTerm}" / ${data.category}`; resultEl.style.color = "#22c55e"; }
+      const raw = data.choices?.[0]?.message?.content?.trim() || "{}";
+      let parsed = {};
+      try { parsed = JSON.parse(raw); } catch { /* ignore */ }
+      if (parsed.searchTerm) {
+        if (resultEl) { resultEl.textContent = `✓ Groq OK — "${parsed.searchTerm}" / ${parsed.category}`; resultEl.style.color = "#22c55e"; }
       } else {
-        if (resultEl) { resultEl.textContent = `✗ API error: ${data.error || "unknown"}`; resultEl.style.color = "#ef4444"; }
+        if (resultEl) { resultEl.textContent = `✓ Connected but unexpected response: ${raw.slice(0, 80)}`; resultEl.style.color = "#f59e0b"; }
       }
     } catch (err) {
-      if (resultEl) { resultEl.textContent = `✗ Network error: ${err.message}`; resultEl.style.color = "#ef4444"; }
+      if (resultEl) { resultEl.textContent = `✗ ${err.message}`; resultEl.style.color = "#ef4444"; }
     }
   });
 
