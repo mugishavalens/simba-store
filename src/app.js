@@ -63,6 +63,7 @@ import {
   setSearchDisplay,
   setSearchBoth,
   patchSearchDisplay,
+  patchFilter,
   setTheme,
   signOut,
   subscribe,
@@ -4692,7 +4693,7 @@ function bindEvents(currentRoute) {
 
     async function runAiSearch(rawValue) {
       const trimmed = rawValue.trim();
-      if (!trimmed || trimmed === _aiLastQuery) return;
+      if (!trimmed || trimmed.length < 3 || trimmed === _aiLastQuery) return;
       _aiLastQuery = trimmed;
 
       if (_aiController) { try { _aiController.abort(); } catch (_) {} }
@@ -4725,7 +4726,7 @@ function bindEvents(currentRoute) {
         const { searchTerm, category } = data || {};
         const validCategories = getCategories(getState().products);
         if (category && category !== "all" && validCategories.includes(category)) {
-          setFilter("category", category);
+          patchFilter("category", category); // silent — no render until setSearchBoth below
         }
 
         // Preserve any price constraint from the original query.
@@ -4763,7 +4764,7 @@ function bindEvents(currentRoute) {
       // This way the next render (after debounce) shows the correct input value.
       patchSearchDisplay(value);
       clearTimeout(_aiDebounceTimer);
-      if (value.trim().length >= 2) {
+      if (value.trim().length >= 3) {
         // Debounce: run AI search + render only after user pauses typing
         _aiDebounceTimer = setTimeout(() => runAiSearch(value), 400);
       } else {
@@ -4772,8 +4773,8 @@ function bindEvents(currentRoute) {
         // Clear immediately if input is empty
         if (value.trim().length === 0) {
           _catalogLimit = 36;
-          setSearchBoth("", "");
-          setFilter("category", "all");
+          patchFilter("category", "all");
+          setSearchBoth("", ""); // single emit
         }
       }
     });
@@ -4784,8 +4785,8 @@ function bindEvents(currentRoute) {
         if (_aiController) { try { _aiController.abort(); } catch (_) {} _aiController = null; }
         _aiLastQuery = "";
         _catalogLimit = 36;
-        setSearchBoth("", "");
-        setFilter("category", "all");
+        patchFilter("category", "all");
+        setSearchBoth("", ""); // single emit
         return;
       }
       if (event.key !== "Enter") return;
@@ -4806,8 +4807,8 @@ function bindEvents(currentRoute) {
       if (_aiController) { try { _aiController.abort(); } catch (_) {} _aiController = null; }
       _aiLastQuery = "";
       _catalogLimit = 36;
-      setSearchBoth("", "");
-      setFilter("category", "all");
+      patchFilter("category", "all");
+      setSearchBoth("", ""); // single emit
       requestAnimationFrame(() => document.querySelector("#search-input")?.focus());
     });
   })();

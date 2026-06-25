@@ -257,7 +257,8 @@ function hasTokenMatch(text, token) {
 }
 
 function isNearSearchToken(value, token) {
-  if (token.length < 4 || value.length < 4 || Math.abs(value.length - token.length) > 1) return false;
+  // Require min 5 chars to use fuzzy matching — prevents "milk" ↔ "mila"
+  if (token.length < 5 || value.length < 5 || Math.abs(value.length - token.length) > 1) return false;
   let edits = 0;
   let i = 0;
   let j = 0;

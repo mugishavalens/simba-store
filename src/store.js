@@ -508,6 +508,12 @@ export function setFilter(key, value) {
   emit();
 }
 
+// Silent version — update filter state without re-rendering.
+// Use before a setSearch*/setSearchBoth call so there's only one emit total.
+export function patchFilter(key, value) {
+  state.filters[key] = value;
+}
+
 export function setTheme(theme) {
   state.theme = theme;
   document.body.dataset.theme = theme;
