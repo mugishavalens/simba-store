@@ -3467,18 +3467,27 @@ function renderAdminOverviewTab(state, careUsers, adminNotifications, tr) {
       <article class="feature-card ${expiring.length ? "feature-card--warn" : ""}"><h3>${tr("alertExpiringSoon")}</h3><p>${expiring.length}</p></article>
     </div>
     <article class="summary-card" style="margin-top:1.25rem">
-      <h3>${tr("groqKeyTitle")} <span class="badge ${groqOn ? "badge--ok" : "badge--warn"}">${groqOn ? tr("groqKeyStatusOn") : tr("groqKeyStatusOff")}</span></h3>
-      <p class="muted">${tr("groqKeyHint")}</p>
-      <form id="admin-groq-form" class="auth-form admin-form" style="max-width:520px">
+      <h3>🤖 AI Search (Groq) <span class="badge ${groqOn ? "badge--ok" : "badge--warn"}">${groqOn ? "Active" : "No key — using fallback"}</span></h3>
+      <p class="muted">Enter a free Groq API key (<strong>gsk_…</strong>) from <a href="https://console.groq.com" target="_blank" rel="noopener">console.groq.com</a> to enable natural-language search powered by Llama 3.3 70B. Without a key the built-in keyword fallback is used.</p>
+      <form id="admin-groq-form" class="auth-form admin-form" style="max-width:560px;margin-top:0.75rem">
         <label class="checkout-field">
-          <span>${tr("groqKeyTitle")}</span>
-          <input id="admin-groq-key" name="key" type="password" placeholder="${tr("groqKeyPlaceholder")}" value="${escapeHtml(groqKey)}" autocomplete="off" />
+          <span>Groq API Key</span>
+          <div style="display:flex;gap:0.5rem;align-items:center">
+            <input id="admin-groq-key" name="key" type="password" placeholder="gsk_…" value="${escapeHtml(groqKey)}" autocomplete="off" style="flex:1" />
+            <button type="button" class="pw-toggle button button--ghost" style="flex-shrink:0" title="Show/hide key">👁</button>
+          </div>
         </label>
-        <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-          <button class="button button--primary" type="submit">${tr("groqKeySave")}</button>
-          <button class="button button--ghost" type="button" id="admin-groq-clear">${tr("groqKeyClear")}</button>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+          <button class="button button--primary" type="submit">Save key</button>
+          <button class="button button--ghost" type="button" id="admin-groq-clear">Clear</button>
+          <button class="button button--outline" type="button" id="admin-groq-test">Test Groq ▶</button>
+          <span id="admin-groq-test-result" style="font-size:0.85rem;font-weight:600"></span>
         </div>
       </form>
+      <div style="margin-top:0.75rem;padding:0.65rem 1rem;background:var(--surface-alt,#1e293b);border-radius:8px;font-size:0.82rem;line-height:1.7">
+        <strong>Try these search examples:</strong><br/>
+        "cheap breakfast ideas" · "i want milk under 1000 RWF" · "cheapest beer" · "whisky under 20000"
+      </div>
     </article>
     <div class="admin-grid">
       <article class="summary-card">
@@ -5520,6 +5529,31 @@ function bindEvents(currentRoute) {
     const input = document.querySelector("#admin-groq-key");
     if (input) input.value = "";
     setGroqKey("");
+  });
+
+  document.querySelector("#admin-groq-test")?.addEventListener("click", async () => {
+    const resultEl = document.querySelector("#admin-groq-test-result");
+    const key = document.querySelector("#admin-groq-key")?.value?.trim() || localStorage.getItem("simba.groq-api-key") || "";
+    if (!key) {
+      if (resultEl) { resultEl.textContent = "✗ No key entered"; resultEl.style.color = "#ef4444"; }
+      return;
+    }
+    if (resultEl) { resultEl.textContent = "Testing…"; resultEl.style.color = ""; }
+    try {
+      const res = await fetch("/api/ai-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Groq-Api-Key": key },
+        body: JSON.stringify({ query: "cheap milk under 2000", apiKey: key }),
+      });
+      const data = await res.json();
+      if (data && data.searchTerm && !data.error) {
+        if (resultEl) { resultEl.textContent = `✓ Groq connected — returned: "${data.searchTerm}" / ${data.category}`; resultEl.style.color = "#22c55e"; }
+      } else {
+        if (resultEl) { resultEl.textContent = `✗ API error: ${data.error || "unknown"}`; resultEl.style.color = "#ef4444"; }
+      }
+    } catch (err) {
+      if (resultEl) { resultEl.textContent = `✗ Network error: ${err.message}`; resultEl.style.color = "#ef4444"; }
+    }
   });
 
   document.querySelectorAll(".branch-stock-form").forEach((formElement) =>
