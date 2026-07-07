@@ -617,6 +617,7 @@ function renderTopbar(state, cartSummary, categories, tr, currentRoute) {
                 ? `<a class="main-nav__link" href="#/branch">${BRANCH_OPS_LABELS[state.language]?.nav || BRANCH_OPS_LABELS.en.nav}</a>`
                 : `
                   <a class="main-nav__link nav-deals-link" href="#/promotions">🔥 ${tr("navDeals") || "Deals"}</a>
+                  <a class="main-nav__link" href="#vision">${tr("navVision")}</a>
                   <a class="main-nav__link" href="#/branches">${tr("navBranches")}</a>
                   <a class="main-nav__link" href="#support">${tr("navSupport")}</a>
                   <a class="main-nav__link" href="#/about">${tr("navAbout")}</a>

@@ -1420,20 +1420,28 @@ a { color: inherit; text-decoration: none; }
 
 .cart-items {
   flex: 1;
-  min-height: 0;
+  min-height: 60px;
   overflow-y: auto;
-  padding-right: 0.2rem;
+  padding-right: 0.4rem;
   overscroll-behavior: contain;
   scrollbar-width: thin;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
 .cart-items::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
+}
+
+.cart-items::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .cart-items::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--muted) 40%, transparent);
+  background: color-mix(in srgb, var(--muted) 60%, transparent);
   border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 .cart-item {
