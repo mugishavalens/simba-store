@@ -427,6 +427,51 @@ function renderProductImage(product, options = {}) {
   return `<img${className} src="${escapeHtml(src)}" alt="${escapeHtml(product?.name || "Product image")}" loading="${loading}" onerror="this.onerror=null;this.src='/assets/placeholder.svg'" />`;
 }
 
+/**
+ * Generate multiple angle/view URLs for a product using Cloudinary transformations.
+ * Falls back gracefully for non-Cloudinary images.
+ */
+function getProductGallery(product) {
+  const src = String(product?.image || product?.imageUrl || "").trim();
+  if (!src) return [{ url: "/assets/placeholder.svg", label: "Front" }];
+  const isCloudinary = src.includes("res.cloudinary.com") && src.includes("/upload/");
+  if (!isCloudinary) return [{ url: src, label: "Front" }];
+  const t = (transform) => src.replace("/upload/", `/upload/${transform}/`);
+  return [
+    { url: src,                                        label: "Front"  },
+    { url: t("c_crop,g_center,w_420,h_420"),           label: "Detail" },
+    { url: t("c_crop,g_north,w_800,h_420"),            label: "Top"    },
+    { url: t("c_crop,g_south,w_800,h_420"),            label: "Bottom" },
+  ];
+}
+
+function renderProductGallery(product) {
+  const gallery = getProductGallery(product);
+  const alt = escapeHtml(product?.name || "Product image");
+  const thumbs = gallery.map((item, i) => `
+    <button class="pg-thumb${i === 0 ? " pg-thumb--active" : ""}" data-gallery-idx="${i}" aria-label="${escapeHtml(item.label)} view" type="button">
+      <img src="${escapeHtml(item.url)}" alt="${alt} – ${escapeHtml(item.label)}" loading="lazy" onerror="this.onerror=null;this.src='/assets/placeholder.svg'" />
+      <span class="pg-thumb__label">${escapeHtml(item.label)}</span>
+    </button>`).join("");
+  return `
+    <div class="product-gallery" id="product-gallery" data-gallery-count="${gallery.length}">
+      <div class="product-gallery__main" id="gallery-main-wrap">
+        <img id="gallery-main-img"
+          src="${escapeHtml(gallery[0].url)}"
+          alt="${alt}"
+          loading="eager"
+          onerror="this.onerror=null;this.src='/assets/placeholder.svg'"
+        />
+        ${gallery.length > 1 ? `
+          <button class="gallery-arrow gallery-arrow--prev" id="gallery-prev" type="button" aria-label="Previous image">&#8249;</button>
+          <button class="gallery-arrow gallery-arrow--next" id="gallery-next" type="button" aria-label="Next image">&#8250;</button>
+          <span class="gallery-badge" id="gallery-badge">${escapeHtml(gallery[0].label)}</span>
+        ` : ""}
+      </div>
+      ${gallery.length > 1 ? `<div class="product-gallery__thumbs" id="gallery-thumbs">${thumbs}</div>` : ""}
+    </div>`;
+}
+
 function renderLanguageWelcome(state) {
   if (state.languageWelcomeSeen) return "";
   if (!state.products || !state.products.length) return "";
@@ -1443,7 +1488,7 @@ function renderProductView(state, productId, cartSummary, tr) {
         <div class="detail-card__media">
           ${promo ? `<span class="promo-badge">-${Number(promo.percent)}${tr("promotionBadge")}</span>` : ""}
           ${renderHeartButton(product.id, state, { variant: "solid" })}
-          ${renderProductImage(product, { eager: true })}
+          ${renderProductGallery(product)}
         </div>
         <div class="detail-card__content">
           <div class="tag-row">
@@ -6011,6 +6056,77 @@ function bindEvents(currentRoute) {
     }
     render();
   });
+
+  // ── Product image gallery ─────────────────────────────────────────────────────
+  (function initProductGallery() {
+    const gallery = document.getElementById("product-gallery");
+    if (!gallery) return;
+    const mainImg   = document.getElementById("gallery-main-img");
+    const badge     = document.getElementById("gallery-badge");
+    const prevBtn   = document.getElementById("gallery-prev");
+    const nextBtn   = document.getElementById("gallery-next");
+    const thumbWrap = document.getElementById("gallery-thumbs");
+    const thumbBtns = thumbWrap ? Array.from(thumbWrap.querySelectorAll(".pg-thumb")) : [];
+    const count = Number(gallery.dataset.galleryCount) || 1;
+    let current = 0;
+    let fadeTimer = null;
+
+    // Make gallery keyboard-focusable
+    gallery.setAttribute("tabindex", "0");
+
+    function goTo(idx) {
+      idx = (idx + count) % count;
+      current = idx;
+      const thumb = thumbBtns[idx];
+      if (!thumb) return;
+      const src   = thumb.querySelector("img")?.getAttribute("src") || "";
+      const label = thumb.querySelector(".pg-thumb__label")?.textContent || "";
+
+      // Cancel any pending fade to avoid race condition on rapid clicks
+      if (fadeTimer) { clearTimeout(fadeTimer); mainImg.style.opacity = "1"; }
+
+      mainImg.style.opacity = "0";
+      fadeTimer = setTimeout(() => {
+        mainImg.src = src;
+        mainImg.style.opacity = "1";
+        fadeTimer = null;
+      }, 130);
+
+      if (badge) badge.textContent = label;
+      thumbBtns.forEach((b, i) => b.classList.toggle("pg-thumb--active", i === idx));
+      thumb.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+    }
+
+    thumbBtns.forEach((btn, i) => btn.addEventListener("click", () => goTo(i)));
+    prevBtn?.addEventListener("click", () => goTo(current - 1));
+    nextBtn?.addEventListener("click", () => goTo(current + 1));
+
+    // Keyboard arrow support
+    gallery.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowLeft")  { e.preventDefault(); goTo(current - 1); }
+      if (e.key === "ArrowRight") { e.preventDefault(); goTo(current + 1); }
+    });
+
+    // Touch swipe — track horizontal intent and suppress page scroll when swiping sideways
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let swipeLocked = false;
+    mainImg.addEventListener("touchstart", (e) => {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      swipeLocked = false;
+    }, { passive: true });
+    mainImg.addEventListener("touchmove", (e) => {
+      const dx = Math.abs(e.touches[0].clientX - touchStartX);
+      const dy = Math.abs(e.touches[0].clientY - touchStartY);
+      if (!swipeLocked && dx > dy && dx > 8) { swipeLocked = true; }
+      if (swipeLocked) e.preventDefault();
+    }, { passive: false });
+    mainImg.addEventListener("touchend", (e) => {
+      const dx = e.changedTouches[0].clientX - touchStartX;
+      if (Math.abs(dx) > 40) goTo(dx < 0 ? current + 1 : current - 1);
+    }, { passive: true });
+  })();
 
   // ── Qty control on product detail page ───────────────────────────────────────
   document.querySelectorAll(".qty-control--detail .cart-qty").forEach((btn) => {
