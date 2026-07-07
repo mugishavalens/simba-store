@@ -1836,6 +1836,13 @@ function renderCheckoutView(state, cartSummary, tr) {
 }
 
 function renderAboutPage(state, tr) {
+  const renderParagraphs = (text) => (text || "")
+    .split("\n")
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`)
+    .join("");
+
   return `
     <main>
       <section class="section">
@@ -1848,12 +1855,20 @@ function renderAboutPage(state, tr) {
         </div>
         <div class="about-grid">
           <div class="about-block">
-            <h3>${tr("aboutPageHistory")}</h3>
-            <p>${tr("aboutPageHistoryText")}</p>
+            <h3>${tr("aboutPageCompanyProfile")}</h3>
+            ${renderParagraphs(tr("aboutPageCompanyProfileText"))}
           </div>
           <div class="about-block">
-            <h3>${tr("aboutPageMission")}</h3>
-            <p>${tr("aboutPageMissionText")}</p>
+            <h3>${tr("aboutPageValues")}</h3>
+            ${renderParagraphs(tr("aboutPageValuesText"))}
+          </div>
+          <div class="about-block">
+            <h3>${tr("aboutPageCategories")}</h3>
+            ${renderParagraphs(tr("aboutPageCategoriesText"))}
+          </div>
+          <div class="about-block">
+            <h3>${tr("aboutPageMilestones")}</h3>
+            ${renderParagraphs(tr("aboutPageMilestonesText"))}
           </div>
           <div class="about-block">
             <h3>${tr("aboutPageContact")}</h3>
