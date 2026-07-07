@@ -1,0 +1,56 @@
+
+Start your Free Trial with $300 in credit. Don’t worry—you won’t be charged if you run out of credits. Learn more 
+Console Logo
+Search (/) for resources, docs, products, and more
+
+Google Auth Platform
+/
+/
+Client ID for Web application
+Name
+Simba Web Client
+The name of your OAuth 2.0 client. This name is only used to identify the client in the console and will not be shown to end users.
+The domains of the URIs you add below will be automatically added to your OAuth consent screen as authorized domains .
+
+Authorized JavaScript origins
+For use with requests from a browser
+URIs 1 
+http://localhost:4173
+URIs 2 
+http://127.0.0.1:4173
+URIs 3 
+http://127.0.0.1:5501
+URIs 4 
+http://localhost:5501
+URIs 5 
+https://simba-v0.netlify.app
+
+Authorized redirect URIs
+For use with requests from a web server
+URIs 1 
+https://aaqyatojbyhlcaozmyuh.supabase.co/auth/v1/callback
+URIs 2 
+https://simba-store.netlify.app/index.html
+URIs 3 
+https://simba-v0.netlify.app
+Note: It may take 5 minutes to a few hours for settings to take effect
+
+Additional information
+Client ID
+258086530526-78tsu8svfh76n6l999qe17ihvoc3q8vl.apps.googleusercontent.com
+Creation date
+April 26, 2026, 10:58:47 PM GMT+2
+Last used date
+June 23, 2026 (Note: this data could be delayed by a day or more.)
+Inactive OAuth clients are subject to deletion if they are not used for 6 months. You will be notified of deletion due to inactivity, and can restore clients up to 30 days after deletion. Learn more 
+Client secrets
+If you are in the process of changing client secrets, you can manually rotate them without downtime. Learn more 
+Viewing and downloading client secrets is no longer available. If you have lost the secret below, please add a new one. Remember to store client secrets securely and treat them with extreme care. Secrets should never be checked into code repositories. Learn more 
+Client secret
+****oyn1
+Creation date
+April 26, 2026, 10:58:47 PM GMT+2
+Status
+ Enabled
+
+OAuth client saved
