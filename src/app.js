@@ -1236,7 +1236,7 @@ function renderHomeView(state, categories, filteredProducts, cartSummary, tr) {
               const avg = reviews.length
                 ? (reviews.reduce((sum, review) => sum + Number(review.rating || 0), 0) / reviews.length).toFixed(1)
                 : null;
-              return `<button class="${cls} branch-focus-btn" type="button" data-branch-idx="${idx}"><strong>${escapeHtml(branch.name)}</strong><span class="muted">${escapeHtml(branch.address)}</span>${avg ? `<span class="muted">${tr("branchRating")}: ${avg}/5</span>` : ""}</button>`;
+              return `<button class="${cls} branch-focus-btn" type="button" data-branch-idx="${idx}"><strong>${escapeHtml(branch.name)}</strong><span class="muted">${escapeHtml(branch.address)}</span>${branch.hours ? `<span class="muted">🕐 ${escapeHtml(branch.hours)}</span>` : ""}${avg ? `<span class="muted">${tr("branchRating")}: ${avg}/5</span>` : ""}</button>`;
             }).join("")}
           </div>
         </div>
@@ -1292,6 +1292,31 @@ const WISHLIST_LABELS = {
 
 function getWishlistLabels(lang) {
   return WISHLIST_LABELS[lang] || WISHLIST_LABELS.en;
+}
+
+function getProductDetailSections(product) {
+  const name = String(product?.name || "this item");
+  const category = String(product?.category || "General");
+  const unit = String(product?.unit || "item");
+  const stockValue = product?.branchStock
+    ? Object.values(product.branchStock).reduce((sum, value) => sum + Number(value || 0), 0)
+    : 0;
+  const useCase = /food|drink|milk|juice|beer|wine|water|snack|bread|rice|oil|sugar|tea|coffee/i.test(name.toLowerCase())
+    ? "Great for daily meals, snacks, or quick restocking."
+    : /beauty|cosmetic|shampoo|cream|soap|detergent|sanitary|clean|care/i.test(name.toLowerCase())
+      ? "A practical everyday essential for home and personal care."
+      : "A dependable choice for daily routines, gifting, or household use.";
+  const pickupNote = stockValue > 0
+    ? "Available in multiple branches, so pickup is usually quick."
+    : "Branch stock can change, so it is worth checking availability before visiting.";
+  return {
+    description: `${name} is part of Simba’s ${category.toLowerCase()} range and is designed for easy everyday shopping.`,
+    bullets: [
+      `${name} is sold by the ${unit.toLowerCase()} for simple basket planning.`,
+      useCase,
+      pickupNote,
+    ],
+  };
 }
 
 function wishlistCountLabel(count, labels) {
@@ -1439,6 +1464,18 @@ function renderProductView(state, productId, cartSummary, tr) {
             ${promo ? `<span class="product-card__price-was">${formatPrice(product.price)}</span>` : ""}
             <strong class="product-card__price">${formatPrice(effective)}</strong>
           </div>
+          ${(() => {
+            const detailSections = getProductDetailSections(product);
+            return `
+              <div class="product-detail-card">
+                <h3>${tr("details")}</h3>
+                <p>${escapeHtml(detailSections.description)}</p>
+                <ul class="detail-highlights">
+                  ${detailSections.bullets.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+                </ul>
+              </div>
+            `;
+          })()}
           ${
             state.isAuthenticated
               ? `<div class="detail-qty-row">
@@ -1919,6 +1956,18 @@ function renderQuickViewModal(state, productId, tr) {
               <strong>${formatPrice(effectivePrice)}</strong>
             </div>
             <p class="quickview-unit muted">${tr("unit")}: ${escapeHtml(product.unit || "")}</p>
+            ${(() => {
+              const detailSections = getProductDetailSections(product);
+              return `
+                <div class="product-detail-card product-detail-card--compact">
+                  <h3>${tr("details")}</h3>
+                  <p>${escapeHtml(detailSections.description)}</p>
+                  <ul class="detail-highlights">
+                    ${detailSections.bullets.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+                  </ul>
+                </div>
+              `;
+            })()}
             ${inStock
               ? `<div class="cart-item__controls" style="margin-top:1rem">
                   <div class="qty-control">
@@ -2151,6 +2200,7 @@ function renderMomoProcessing(state, tr) {
     { key: 3, label: tr("momoStepConfirm") },
   ];
 
+  const progressValue = Math.min(100, Math.round((Math.max(step, 0) / 4) * 100));
   return `
     <div class="momo-modal" role="dialog" aria-modal="true" aria-live="polite">
       <div class="momo-modal__panel">
@@ -2160,6 +2210,9 @@ function renderMomoProcessing(state, tr) {
         <h2 class="momo-modal__title">${tr("momoProcessingTitle")}</h2>
         <div class="momo-modal__amount">${formatPrice(amount)}</div>
         <p class="momo-modal__phone">${escapeHtml(phone)}</p>
+        <div class="momo-modal__progress" aria-hidden="true">
+          <div class="momo-modal__progress-bar" style="width:${progressValue}%"></div>
+        </div>
         <ul class="momo-modal__steps">
           ${steps.map((s) => {
             const status = step > s.key ? "done" : step === s.key ? "active" : "";
@@ -2187,13 +2240,13 @@ async function runMomoSimulation({ provider, phone, amount }) {
       momoProcessingState = { ...momoProcessingState, step };
       render();
     };
-    setTimeout(() => advance(1), 700);
-    setTimeout(() => advance(2), 1500);
-    setTimeout(() => advance(3), 2300);
+    setTimeout(() => advance(1), 1200);
+    setTimeout(() => advance(2), 2600);
+    setTimeout(() => advance(3), 4200);
     setTimeout(() => {
       momoProcessingState = { ...momoProcessingState, step: 4, success: true };
       render();
-    }, 3100);
+    }, 6200);
     setTimeout(() => {
       const result = { reference, provider, amount, phone };
       momoProcessingState = null;
