@@ -1,11 +1,43 @@
 import { createServer } from "node:http";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)));
 const PORT = Number(process.env.PORT) || 5000;
 const HOST = "0.0.0.0";
+const CONFIG_PATH = join(ROOT, ".cache", "server-config.json");
+
+// Admin pass for server-side API protection.
+// Priority: ADMIN_PASS env var > SESSION_SECRET > built-in default
+const DEFAULT_ADMIN_PASS = process.env.ADMIN_PASS || process.env.SESSION_SECRET || "SimbaAdmin@2026";
+
+async function readServerConfig() {
+  try {
+    const raw = await readFile(CONFIG_PATH, "utf8");
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+async function writeServerConfig(data) {
+  try {
+    await mkdir(join(ROOT, ".cache"), { recursive: true });
+    await writeFile(CONFIG_PATH, JSON.stringify(data, null, 2), "utf8");
+    return true;
+  } catch (err) {
+    console.error("Config write error:", err);
+    return false;
+  }
+}
+
+function getGroqKey(config, req) {
+  // Priority: server-stored key > env var > client header
+  return (
+    String(config.groqApiKey || process.env.GROQ_API_KEY || req?.headers?.["x-groq-api-key"] || "").trim()
+  );
+}
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -29,6 +61,9 @@ const MIME = {
 function safeJoin(root, urlPath) {
   const decoded = decodeURIComponent(urlPath.split("?")[0].split("#")[0]);
   const normalized = normalize(decoded).replace(/^(\.\.[\\/])+/, "");
+  // Block any path segment that starts with a dot (dotfiles, .cache, .git, .env, etc.)
+  const segments = normalized.split(/[\\/]/);
+  if (segments.some((seg) => seg.startsWith("."))) return null;
   const full = resolve(join(root, normalized));
   if (!full.startsWith(root)) return null;
   return full;
@@ -89,6 +124,127 @@ function localNlSearch(query) {
   return { searchTerm: cleaned || query, category: "all" };
 }
 
+async function handleAdminGroqKey(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+
+  if (req.method === "GET") {
+    const config = await readServerConfig();
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ hasKey: Boolean(config.groqApiKey), model: "llama-3.3-70b-versatile" }));
+    return;
+  }
+
+  if (req.method === "POST") {
+    const raw = await readBody(req);
+    let body;
+    try { body = JSON.parse(raw); } catch {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Invalid JSON" }));
+      return;
+    }
+    const { groqKey, adminPass } = body;
+    if (!adminPass || String(adminPass).trim() !== DEFAULT_ADMIN_PASS) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Invalid admin password" }));
+      return;
+    }
+    const config = await readServerConfig();
+    const trimmed = String(groqKey || "").trim();
+    if (trimmed) {
+      config.groqApiKey = trimmed;
+    } else {
+      delete config.groqApiKey;
+    }
+    const saved = await writeServerConfig(config);
+    if (!saved) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Failed to save config" }));
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true, hasKey: Boolean(config.groqApiKey) }));
+    return;
+  }
+
+  res.writeHead(405, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ error: "Method not allowed" }));
+}
+
+async function handleAiChat(req, res) {
+  if (req.method !== "POST") {
+    res.writeHead(405, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Method not allowed" }));
+    return;
+  }
+
+  try {
+    const raw = await readBody(req);
+    let body;
+    try { body = JSON.parse(raw); } catch {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Invalid JSON" }));
+      return;
+    }
+
+    const { messages, systemPrompt } = body;
+    if (!Array.isArray(messages) || messages.length === 0) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "messages array required" }));
+      return;
+    }
+
+    const config = await readServerConfig();
+    const apiKey = getGroqKey(config, req);
+
+    if (!apiKey) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "no_key", text: null }));
+      return;
+    }
+
+    const isGroq = apiKey.startsWith("gsk_");
+    const baseUrl = isGroq
+      ? "https://api.groq.com/openai/v1/chat/completions"
+      : "https://api.openai.com/v1/chat/completions";
+    const model = isGroq ? "llama-3.3-70b-versatile" : "gpt-4o-mini";
+
+    const allMessages = [];
+    if (systemPrompt) allMessages.push({ role: "system", content: systemPrompt });
+    allMessages.push(...messages);
+
+    const groqRes = await fetch(baseUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: allMessages,
+        max_tokens: 400,
+        temperature: 0.15,
+      }),
+    });
+
+    if (!groqRes.ok) {
+      const errText = await groqRes.text().catch(() => "");
+      console.error("Groq chat error:", groqRes.status, errText);
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "ai_upstream_error" }));
+      return;
+    }
+
+    const data = await groqRes.json();
+    const text = data.choices?.[0]?.message?.content?.trim() || "";
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    res.end(JSON.stringify({ text }));
+  } catch (err) {
+    console.error("AI chat error:", err);
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "internal_error" }));
+  }
+}
+
 async function handleAiSearch(req, res) {
   try {
     const raw = await readBody(req);
@@ -100,7 +256,8 @@ async function handleAiSearch(req, res) {
     }
 
     const requestApiKey = req.headers["x-groq-api-key"] || bodyApiKey;
-    const apiKey = String(requestApiKey || process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY || "").trim();
+    const config = await readServerConfig();
+    const apiKey = String(config.groqApiKey || process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY || requestApiKey || "").trim();
     if (!apiKey) {
       // Local NL fallback — no API key needed
       const localResult = localNlSearch(query);
@@ -209,6 +366,16 @@ EXAMPLES:
 
 const server = createServer(async (req, res) => {
   try {
+    if (req.url === "/api/admin/groq-key") {
+      await handleAdminGroqKey(req, res);
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/api/ai-chat") {
+      await handleAiChat(req, res);
+      return;
+    }
+
     if (req.method === "POST" && req.url === "/api/ai-search") {
       await handleAiSearch(req, res);
       return;

@@ -2849,7 +2849,7 @@ async function buildAssistantReply(state, rawQuery, tr) {
   const cartCommand = parseAssistantCartAction(rawQuery, state.products, state.cart);
   if (cartCommand) return buildAssistantCartReply(state, cartCommand, tr);
 
-  const groqKey = localStorage.getItem("simba.groq-api-key") || "";
+  const clientGroqKey = localStorage.getItem("simba.groq-api-key") || "";
   const matches = getAssistantProductMatches(state.products, rawQuery);
   const cartSummary = summarizeCart(state.products || [], state.cart || [], state.promotions || []);
   const cartLines = cartSummary.items.map(
@@ -2859,10 +2859,6 @@ async function buildAssistantReply(state, rawQuery, tr) {
     const branches = formatBranchAvailability(product, SIMBA_BRANCHES, 2);
     return `- ${product.name} | ${product.category} | ${product.price} RWF | ${product.inStock ? "in stock" : "out of stock"}${branches ? ` | branches: ${branches}` : ""}`;
   });
-
-  if (!groqKey) {
-    return buildSmartLocalAssistantReply(state, rawQuery, tr, matches);
-  }
 
   const systemPrompt = `You are a helpful assistant for Simba Supermarket in Kigali, Rwanda.
 Respond ONLY in ${langName}.
@@ -2887,31 +2883,28 @@ Simba info:
 ${catalogLines.length ? `FILTERED CATALOG:\n${catalogLines.join("\n")}` : "FILTERED CATALOG: No matching products."}`;
 
   try {
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    // Route through server — server uses its stored key, falls back to client key header
+    const res = await fetch("/api/ai-chat", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${groqKey}`,
+        ...(clientGroqKey ? { "X-Groq-Api-Key": clientGroqKey } : {}),
       },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: rawQuery },
-        ],
-        max_tokens: 320,
-        temperature: 0.15,
+        systemPrompt,
+        messages: [{ role: "user", content: rawQuery }],
       }),
     });
 
     if (!res.ok) throw new Error(`${res.status}`);
     const data = await res.json();
-    const text = data.choices?.[0]?.message?.content?.trim();
+    if (data.error === "no_key") return buildSmartLocalAssistantReply(state, rawQuery, tr, matches);
+    const text = data.text;
     if (!text) throw new Error("empty");
 
     return { text, products: matches.visible, cartAction: null, cartProductId: null, cartQuantity: 0 };
   } catch (err) {
-    console.error("Groq assistant error:", err.message);
+    console.error("AI chat error:", err.message);
     return buildSmartLocalAssistantReply(state, rawQuery, tr, matches);
   }
 }
@@ -2975,26 +2968,23 @@ SIMBA SYSTEM INFO:
 ${scored.length > 0 ? `PRODUCT CATALOG (pre-filtered):\n${scored.join("\n")}` : ""}`;
 
   try {
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const clientKey = localStorage.getItem("simba.groq-api-key") || "";
+    const res = await fetch("/api/ai-chat", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${localStorage.getItem("simba.groq-api-key") || ""}`,
+        ...(clientKey ? { "X-Groq-Api-Key": clientKey } : {}),
       },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: rawQuery },
-        ],
-        max_tokens: 220,
-        temperature: 0.2,
+        systemPrompt,
+        messages: [{ role: "user", content: rawQuery }],
       }),
     });
 
     if (!res.ok) throw new Error(`${res.status}`);
     const data = await res.json();
-    const text = data.choices?.[0]?.message?.content?.trim();
+    if (data.error === "no_key") return buildLocalAssistantReply(state, rawQuery, tr);
+    const text = data.text;
     if (!text) throw new Error("empty");
 
     const scoredProducts = scored.map((line) => {
@@ -3593,8 +3583,10 @@ function renderAdminOverviewTab(state, careUsers, adminNotifications, tr) {
     const days = Math.ceil((new Date(p.expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
     return days >= 0 && days <= EXPIRY_ALERT_DAYS;
   });
-  const groqKey = (typeof localStorage !== "undefined" ? localStorage.getItem("simba.groq-api-key") : "") || "";
-  const groqOn = Boolean(groqKey);
+  const localGroqKey = (typeof localStorage !== "undefined" ? localStorage.getItem("simba.groq-api-key") : "") || "";
+  const localGroqOn = Boolean(localGroqKey);
+  const savedGoogleClientId = (typeof localStorage !== "undefined" ? localStorage.getItem("simba.google-client-id") : "") || "";
+  const googleRedirectUri = `${window.location.origin}/index.html`;
   return `
     <div class="feature-grid">
       <article class="feature-card"><h3>${tr("statProducts")}</h3><p>${state.products.length}</p></article>
@@ -3604,28 +3596,96 @@ function renderAdminOverviewTab(state, careUsers, adminNotifications, tr) {
       <article class="feature-card ${lowStock.length ? "feature-card--warn" : ""}"><h3>${tr("alertLowStock")}</h3><p>${lowStock.length}</p></article>
       <article class="feature-card ${expiring.length ? "feature-card--warn" : ""}"><h3>${tr("alertExpiringSoon")}</h3><p>${expiring.length}</p></article>
     </div>
+
+    <!-- SERVER AI KEY — shared for all users -->
     <article class="summary-card" style="margin-top:1.25rem">
-      <h3>🤖 AI Search (Groq) <span class="badge ${groqOn ? "badge--ok" : "badge--warn"}">${groqOn ? "Active" : "No key — using fallback"}</span></h3>
-      <p class="muted">Enter a free Groq API key (<strong>gsk_…</strong>) from <a href="https://console.groq.com" target="_blank" rel="noopener">console.groq.com</a> to enable natural-language search powered by Llama 3.3 70B. Without a key the built-in keyword fallback is used.</p>
-      <form id="admin-groq-form" class="auth-form admin-form" style="max-width:560px;margin-top:0.75rem">
+      <h3>🤖 AI Configuration (Groq — Llama 3.3 70B)
+        <span id="admin-server-groq-badge" class="badge badge--warn" style="margin-left:0.5rem">Checking…</span>
+      </h3>
+      <p class="muted" style="margin-bottom:0.75rem">
+        Set a server-side <strong>Groq API key</strong> here — it powers AI search and the AI assistant for <em>all shoppers</em>, even those without their own key.
+        Get a free key at <a href="https://console.groq.com" target="_blank" rel="noopener">console.groq.com</a>.
+      </p>
+
+      <form id="admin-server-groq-form" class="auth-form admin-form" style="max-width:560px">
         <label class="checkout-field">
-          <span>Groq API Key</span>
+          <span>Groq API Key <em style="font-weight:400;font-size:0.82em">(starts with gsk_…)</em></span>
           <div style="display:flex;gap:0.5rem;align-items:center">
-            <input id="admin-groq-key" name="key" type="password" placeholder="gsk_…" value="${escapeHtml(groqKey)}" autocomplete="off" style="flex:1" />
+            <input id="admin-server-groq-key" name="key" type="password" placeholder="gsk_…" autocomplete="off" style="flex:1" />
             <button type="button" class="pw-toggle button button--ghost" style="flex-shrink:0" title="Show/hide key">👁</button>
           </div>
         </label>
+        <label class="checkout-field">
+          <span>Your Admin Password <em style="font-weight:400;font-size:0.82em">(to authorize saving)</em></span>
+          <input id="admin-server-groq-pass" name="pass" type="password" placeholder="Enter your admin password" autocomplete="current-password" style="max-width:340px" />
+        </label>
         <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
-          <button class="button button--primary" type="submit">Save key</button>
-          <button class="button button--ghost" type="button" id="admin-groq-clear">Clear</button>
-          <button class="button button--outline" type="button" id="admin-groq-test">Test Groq ▶</button>
-          <span id="admin-groq-test-result" style="font-size:0.85rem;font-weight:600"></span>
+          <button class="button button--primary" type="submit">💾 Save to Server</button>
+          <button class="button button--ghost" type="button" id="admin-server-groq-clear">🗑 Clear Server Key</button>
+          <button class="button button--outline" type="button" id="admin-server-groq-test">▶ Test</button>
+          <span id="admin-server-groq-result" style="font-size:0.85rem;font-weight:600"></span>
         </div>
       </form>
+
+      <details style="margin-top:1rem">
+        <summary style="cursor:pointer;font-size:0.85rem;color:var(--muted)">My device only — browser key (optional override)</summary>
+        <div style="margin-top:0.6rem">
+          <p class="muted" style="font-size:0.82rem">This key is stored in <em>your browser only</em> and is used as a fallback when no server key is set.</p>
+          <form id="admin-groq-form" class="auth-form admin-form" style="max-width:480px;margin-top:0.5rem">
+            <label class="checkout-field">
+              <span>Browser Groq Key</span>
+              <div style="display:flex;gap:0.5rem;align-items:center">
+                <input id="admin-groq-key" name="key" type="password" placeholder="gsk_…" value="${escapeHtml(localGroqKey)}" autocomplete="off" style="flex:1" />
+                <button type="button" class="pw-toggle button button--ghost" style="flex-shrink:0" title="Show/hide key">👁</button>
+              </div>
+            </label>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+              <button class="button button--outline" type="submit">Save browser key</button>
+              <button class="button button--ghost" type="button" id="admin-groq-clear">Clear</button>
+              <span class="badge ${localGroqOn ? "badge--ok" : ""}" style="font-size:0.8rem">${localGroqOn ? "✓ Set" : "Not set"}</span>
+            </div>
+          </form>
+        </div>
+      </details>
+
       <div style="margin-top:0.75rem;padding:0.65rem 1rem;background:var(--surface-alt,#1e293b);border-radius:8px;font-size:0.82rem;line-height:1.7">
         <strong>Try these search examples:</strong><br/>
         "cheap breakfast ideas" · "i want milk under 1000 RWF" · "cheapest beer" · "whisky under 20000"
       </div>
+    </article>
+
+    <!-- GOOGLE OAUTH SETUP -->
+    <article class="summary-card" style="margin-top:1rem">
+      <h3>🔑 Google Sign-In Setup</h3>
+      <p class="muted" style="margin-bottom:0.75rem">
+        To enable <strong>Sign in with Google</strong>, register a Google OAuth app and paste the Client ID below.
+      </p>
+      <div style="padding:0.75rem 1rem;background:var(--surface-alt,#1e293b);border-radius:8px;font-size:0.82rem;line-height:1.9;margin-bottom:1rem">
+        <strong>Setup steps:</strong><br/>
+        1. Go to <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console → Credentials</a><br/>
+        2. Create a new <strong>OAuth 2.0 Client ID</strong> → Application type: <strong>Web application</strong><br/>
+        3. Under <strong>Authorised JavaScript origins</strong>, add: <code style="background:rgba(255,255,255,0.08);padding:0 4px;border-radius:3px">${escapeHtml(window.location.origin)}</code><br/>
+        4. Under <strong>Authorised redirect URIs</strong>, add: <code style="background:rgba(255,255,255,0.08);padding:0 4px;border-radius:3px">${escapeHtml(googleRedirectUri)}</code><br/>
+        5. Copy the <strong>Client ID</strong> and paste it below
+      </div>
+      <form id="admin-google-form" class="auth-form admin-form" style="max-width:560px">
+        <label class="checkout-field">
+          <span>Google Client ID</span>
+          <input id="admin-google-client-id" name="clientId" type="text"
+            placeholder="258086530526-….apps.googleusercontent.com"
+            value="${escapeHtml(savedGoogleClientId)}"
+            autocomplete="off" style="font-size:0.82rem" />
+        </label>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+          <button class="button button--primary" type="submit">💾 Save Client ID</button>
+          <button class="button button--ghost" type="button" id="admin-google-clear">Clear</button>
+          <span id="admin-google-result" style="font-size:0.85rem;font-weight:600"></span>
+        </div>
+      </form>
+      <p class="muted" style="font-size:0.81rem;margin-top:0.6rem">
+        Current redirect URI your app will use: <strong>${escapeHtml(googleRedirectUri)}</strong><br/>
+        Register this exact URL in Google Console. On Replit the domain changes between sessions — re-add the new URL when it does.
+      </p>
     </article>
     <div class="admin-grid">
       <article class="summary-card">
@@ -5671,61 +5731,164 @@ function bindEvents(currentRoute) {
     btn.addEventListener("click", () => deletePromotion(btn.dataset.promotionDelete)),
   );
 
+  // Browser-local Groq key form (existing, kept for per-device override)
   document.querySelector("#admin-groq-form")?.addEventListener("submit", (event) => {
     event.preventDefault();
     const input = event.currentTarget.querySelector("#admin-groq-key");
     setGroqKey(input?.value || "");
   });
-
   document.querySelector("#admin-groq-clear")?.addEventListener("click", () => {
     const input = document.querySelector("#admin-groq-key");
     if (input) input.value = "";
     setGroqKey("");
   });
 
-  document.querySelector("#admin-groq-test")?.addEventListener("click", async () => {
-    const resultEl = document.querySelector("#admin-groq-test-result");
-    const key = (document.querySelector("#admin-groq-key")?.value || "").trim()
-      || localStorage.getItem("simba.groq-api-key") || "";
-    if (!key) {
-      if (resultEl) { resultEl.textContent = "✗ Enter a key first"; resultEl.style.color = "#ef4444"; }
+  // ── Server-side Groq key management ───────────────────────────────────────
+  // Load badge status from server
+  (async () => {
+    const badge = document.querySelector("#admin-server-groq-badge");
+    if (!badge) return;
+    try {
+      const res = await fetch("/api/admin/groq-key");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.hasKey) {
+          badge.textContent = "✓ Server key active";
+          badge.className = "badge badge--ok";
+        } else {
+          badge.textContent = "No server key — using fallback";
+          badge.className = "badge badge--warn";
+        }
+      }
+    } catch { badge.textContent = "Status unknown"; }
+  })();
+
+  document.querySelector("#admin-server-groq-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const resultEl = document.querySelector("#admin-server-groq-result");
+    const badge = document.querySelector("#admin-server-groq-badge");
+    const key = (document.querySelector("#admin-server-groq-key")?.value || "").trim();
+    const pass = (document.querySelector("#admin-server-groq-pass")?.value || "").trim();
+    if (!pass) {
+      if (resultEl) { resultEl.textContent = "✗ Enter your admin password"; resultEl.style.color = "#ef4444"; }
       return;
     }
-    if (resultEl) { resultEl.textContent = "Testing…"; resultEl.style.color = "#94a3b8"; }
+    if (resultEl) { resultEl.textContent = "Saving…"; resultEl.style.color = "#94a3b8"; }
     try {
-      // Call Groq directly from the browser — works on localhost and deployed
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      const res = await fetch("/api/admin/groq-key", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
-        body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
-          max_tokens: 60,
-          temperature: 0,
-          messages: [
-            { role: "system", content: 'Return ONLY JSON: {"searchTerm":"<keywords>","category":"<category or all>"}' },
-            { role: "user", content: "i want milk under 2000 RWF" },
-          ],
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groqKey: key, adminPass: pass }),
       });
-      if (!res.ok) {
-        const errText = await res.text().catch(() => "");
-        let hint = `HTTP ${res.status}`;
-        try { const j = JSON.parse(errText); hint = j.error?.message || hint; } catch { /* ignore */ }
-        if (resultEl) { resultEl.textContent = `✗ ${hint}`; resultEl.style.color = "#ef4444"; }
-        return;
-      }
       const data = await res.json();
-      const raw = data.choices?.[0]?.message?.content?.trim() || "{}";
-      let parsed = {};
-      try { parsed = JSON.parse(raw); } catch { /* ignore */ }
-      if (parsed.searchTerm) {
-        if (resultEl) { resultEl.textContent = `✓ Groq OK — "${parsed.searchTerm}" / ${parsed.category}`; resultEl.style.color = "#22c55e"; }
+      if (res.ok && data.ok) {
+        if (resultEl) { resultEl.textContent = data.hasKey ? "✓ Server key saved" : "✓ Server key cleared"; resultEl.style.color = "#22c55e"; }
+        if (badge) { badge.textContent = data.hasKey ? "✓ Server key active" : "No server key — using fallback"; badge.className = data.hasKey ? "badge badge--ok" : "badge badge--warn"; }
+        if (!key) document.querySelector("#admin-server-groq-key").value = "";
       } else {
-        if (resultEl) { resultEl.textContent = `✓ Connected but unexpected response: ${raw.slice(0, 80)}`; resultEl.style.color = "#f59e0b"; }
+        const msg = data.error === "Invalid admin password" ? "✗ Wrong admin password" : `✗ ${data.error || "Error"}`;
+        if (resultEl) { resultEl.textContent = msg; resultEl.style.color = "#ef4444"; }
       }
     } catch (err) {
       if (resultEl) { resultEl.textContent = `✗ ${err.message}`; resultEl.style.color = "#ef4444"; }
     }
+  });
+
+  document.querySelector("#admin-server-groq-clear")?.addEventListener("click", async () => {
+    const pass = (document.querySelector("#admin-server-groq-pass")?.value || "").trim();
+    const resultEl = document.querySelector("#admin-server-groq-result");
+    if (!pass) {
+      if (resultEl) { resultEl.textContent = "✗ Enter your admin password first"; resultEl.style.color = "#ef4444"; }
+      return;
+    }
+    if (resultEl) { resultEl.textContent = "Clearing…"; resultEl.style.color = "#94a3b8"; }
+    try {
+      const res = await fetch("/api/admin/groq-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groqKey: "", adminPass: pass }),
+      });
+      const data = await res.json();
+      const badge = document.querySelector("#admin-server-groq-badge");
+      if (res.ok && data.ok) {
+        if (resultEl) { resultEl.textContent = "✓ Server key cleared"; resultEl.style.color = "#22c55e"; }
+        if (badge) { badge.textContent = "No server key — using fallback"; badge.className = "badge badge--warn"; }
+      } else {
+        if (resultEl) { resultEl.textContent = data.error === "Invalid admin password" ? "✗ Wrong admin password" : `✗ ${data.error}`; resultEl.style.color = "#ef4444"; }
+      }
+    } catch (err) {
+      if (resultEl) { resultEl.textContent = `✗ ${err.message}`; resultEl.style.color = "#ef4444"; }
+    }
+  });
+
+  document.querySelector("#admin-server-groq-test")?.addEventListener("click", async () => {
+    const resultEl = document.querySelector("#admin-server-groq-result");
+    const keyInput = document.querySelector("#admin-server-groq-key");
+    const key = (keyInput?.value || "").trim();
+    if (!key) {
+      // Test via server (uses stored key)
+      if (resultEl) { resultEl.textContent = "Testing server key…"; resultEl.style.color = "#94a3b8"; }
+      try {
+        const res = await fetch("/api/ai-chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ systemPrompt: "Reply with exactly: ok", messages: [{ role: "user", content: "ping" }] }),
+        });
+        const data = await res.json();
+        if (data.error === "no_key") {
+          if (resultEl) { resultEl.textContent = "✗ No server key saved yet"; resultEl.style.color = "#ef4444"; }
+        } else if (data.text) {
+          if (resultEl) { resultEl.textContent = "✓ Server AI is working!"; resultEl.style.color = "#22c55e"; }
+        } else {
+          if (resultEl) { resultEl.textContent = `✗ Unexpected: ${JSON.stringify(data).slice(0,60)}`; resultEl.style.color = "#ef4444"; }
+        }
+      } catch (err) {
+        if (resultEl) { resultEl.textContent = `✗ ${err.message}`; resultEl.style.color = "#ef4444"; }
+      }
+      return;
+    }
+    // Test a key that hasn't been saved yet — call Groq directly to validate
+    if (resultEl) { resultEl.textContent = "Testing key…"; resultEl.style.color = "#94a3b8"; }
+    try {
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile", max_tokens: 10, temperature: 0,
+          messages: [{ role: "user", content: "ping" }],
+        }),
+      });
+      if (res.ok) {
+        if (resultEl) { resultEl.textContent = "✓ Key is valid — save it to activate"; resultEl.style.color = "#22c55e"; }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        if (resultEl) { resultEl.textContent = `✗ ${err.error?.message || `HTTP ${res.status}`}`; resultEl.style.color = "#ef4444"; }
+      }
+    } catch (err) {
+      if (resultEl) { resultEl.textContent = `✗ ${err.message}`; resultEl.style.color = "#ef4444"; }
+    }
+  });
+
+  // ── Google OAuth Client ID management ─────────────────────────────────────
+  document.querySelector("#admin-google-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const clientId = (document.querySelector("#admin-google-client-id")?.value || "").trim();
+    const resultEl = document.querySelector("#admin-google-result");
+    if (clientId) {
+      localStorage.setItem("simba.google-client-id", clientId);
+      if (resultEl) { resultEl.textContent = "✓ Client ID saved — Google Sign-In is now active"; resultEl.style.color = "#22c55e"; }
+    } else {
+      localStorage.removeItem("simba.google-client-id");
+      if (resultEl) { resultEl.textContent = "✓ Cleared — using default Client ID"; resultEl.style.color = "#94a3b8"; }
+    }
+  });
+
+  document.querySelector("#admin-google-clear")?.addEventListener("click", () => {
+    const input = document.querySelector("#admin-google-client-id");
+    if (input) input.value = "";
+    localStorage.removeItem("simba.google-client-id");
+    const resultEl = document.querySelector("#admin-google-result");
+    if (resultEl) { resultEl.textContent = "✓ Cleared"; resultEl.style.color = "#94a3b8"; }
   });
 
   document.querySelectorAll(".branch-stock-form").forEach((formElement) =>

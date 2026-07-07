@@ -29,6 +29,18 @@ A modern static rebuild of the Simba Supermarket experience using a Rwandan prod
 
 Configured as a Replit Static deployment with `publicDir: "."` — no build step. All files in the project root are served as-is, mirroring the dev experience.
 
+## Server-Side AI (Groq)
+
+- **`/api/ai-chat`** — proxies AI assistant messages to Groq (Llama 3.3 70B) using the server-stored API key. Falls back to client-supplied `X-Groq-Api-Key` header, then to the built-in keyword/rule engine if no key is available.
+- **`/api/ai-search`** — same key priority for natural-language search.
+- **`/api/admin/groq-key`** — GET returns `{hasKey, model}`; POST accepts `{groqKey, adminPass}` and saves/clears the key to `.cache/server-config.json`. Admin password is `ADMIN_PASS` env var → `SESSION_SECRET` env var → built-in default.
+- Key is shared across all shoppers — set it once from the Admin → Overview tab and all users get AI-powered search and chat.
+
+## Google OAuth Setup
+
+- Admin → Overview tab shows step-by-step instructions for registering the app in Google Cloud Console, with the exact **JavaScript origin** and **redirect URI** to add.
+- Admin can enter a custom Google Client ID (saved to `localStorage["simba.google-client-id"]`) to override the default bundled ID.
+
 ## Admin Dashboard
 
 Tabbed admin (visible only to `admin@simba.rw` / `SimbaAdmin@2026`):
