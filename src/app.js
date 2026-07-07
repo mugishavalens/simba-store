@@ -4455,11 +4455,14 @@ function renderCart(state, cartSummary, tr) {
     .map((sfl) => ({ sfl, product: (state.products || []).find((p) => Number(p.id) === Number(sfl.productId)) }))
     .filter((x) => x.product);
   return `
-    <aside class="cart-drawer">
+    <aside class="cart-drawer" id="cart-drawer">
       <div class="summary-card">
-        <div class="summary-card__row">
+        <div class="summary-card__row cart-header">
           <h3>${tr("cart")}</h3>
-          <button class="button button--ghost" id="close-cart">${tr("close")}</button>
+          <div class="cart-header-actions">
+            <button class="button button--ghost button--sm" id="toggle-cart-expand" aria-label="Expand cart" title="Expand/Minimize">⛶</button>
+            <button class="button button--ghost" id="close-cart">${tr("close")}</button>
+          </div>
         </div>
         ${
           cartSummary.items.length
@@ -5152,6 +5155,14 @@ function bindEvents(currentRoute) {
   document.querySelector("#close-cart")?.addEventListener("click", () => toggleCart(false));
   document.querySelector("#close-cart-go-shop")?.addEventListener("click", () => toggleCart(false));
   document.querySelector("#clear-cart")?.addEventListener("click", () => clearCart());
+  document.querySelector("#toggle-cart-expand")?.addEventListener("click", () => {
+    const drawer = document.querySelector("#cart-drawer");
+    if (drawer) {
+      drawer.classList.toggle("expanded");
+      const btn = document.querySelector("#toggle-cart-expand");
+      if (btn) btn.title = drawer.classList.contains("expanded") ? "Minimize" : "Expand";
+    }
+  });
 
   // Save for later
   document.querySelectorAll("[data-sfl-save]").forEach((btn) =>
